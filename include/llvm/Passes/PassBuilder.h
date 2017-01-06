@@ -120,7 +120,13 @@ public:
     /// any effort taken to reduce the size is worth it regardless of the
     /// execution time impact. You should expect this level to produce rather
     /// slow, but very small, code.
-    Oz
+    Oz,
+
+    /// A mode for running Wazuhl as a decision mechanism what optimizations
+    /// to take.
+    ///
+    /// This algorithm is in a very alpha state.
+    OW
   };
 
   explicit PassBuilder(TargetMachine *TM = nullptr) : TM(TM) {}

@@ -134,6 +134,7 @@
 #include "llvm/Transforms/Utils/SymbolRewriter.h"
 #include "llvm/Transforms/Vectorize/LoopVectorize.h"
 #include "llvm/Transforms/Vectorize/SLPVectorizer.h"
+#include "llvm/Wazuhl/Manager.h"
 
 #include <type_traits>
 
@@ -147,6 +148,7 @@ static bool isOptimizingForSize(PassBuilder::OptimizationLevel Level) {
   case PassBuilder::O1:
   case PassBuilder::O2:
   case PassBuilder::O3:
+  case PassBuilder::OW:
     return false;
 
   case PassBuilder::Os:
@@ -378,6 +380,11 @@ PassBuilder::buildPerModuleDefaultPipeline(OptimizationLevel Level,
                                            bool DebugLogging) {
   assert(Level != O0 && "Must request optimizations for the default pipeline!");
   ModulePassManager MPM(DebugLogging);
+
+  if (Level == OW) {
+    MPM.addPass(wazuhl::Manager());
+    return MPM;
+  }
 
   // Force any function attributes we want the rest of the pipeline te observe.
   MPM.addPass(ForceFunctionAttrsPass());
