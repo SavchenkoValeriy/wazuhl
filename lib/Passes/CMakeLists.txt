@@ -6,4 +6,7 @@ add_llvm_library(LLVMPasses
 
   DEPENDS
   intrinsics_gen
+
+  LINK_LIBS
+  LLVMWazuhl
   )

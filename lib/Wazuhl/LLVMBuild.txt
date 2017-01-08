@@ -17,6 +17,6 @@
 
 [component_0]
 type = Library
-name = Passes
+name = Wazuhl
 parent = Libraries
-required_libraries = Analysis CodeGen Core IPO InstCombine Scalar Support TransformUtils Vectorize Instrumentation Wazuhl
+required_libraries = Analysis CodeGen Core IPO InstCombine Scalar Support TransformUtils Vectorize Instrumentation

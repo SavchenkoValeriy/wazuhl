@@ -551,6 +551,11 @@ ModulePassManager PassBuilder::buildLTODefaultPipeline(OptimizationLevel Level,
   assert(Level != O0 && "Must request optimizations for the default pipeline!");
   ModulePassManager MPM(DebugLogging);
 
+  if (Level == OW) {
+    MPM.addPass(wazuhl::Manager());
+    return MPM;
+  }
+
   // FIXME: Finish fleshing this out to match the legacy LTO pipelines.
   FunctionPassManager LateFPM(DebugLogging);
   LateFPM.addPass(InstCombinePass());
