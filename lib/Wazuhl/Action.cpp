@@ -1,5 +1,4 @@
 #include "llvm/Wazuhl/Action.h"
-#include "llvm/PassInfo.h"
 
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/AliasAnalysisEvaluator.h"
@@ -120,8 +119,8 @@
 
 namespace llvm {
 namespace wazuhl {
-  ActionList::ActionList() {
-    PossibleActions = {
+  ActionList Action::getAllPossibleActions() {
+    return {
 #define ANALYSIS_TO_MODULE_PASS(CTR)                                           \
       RequireAnalysisPass                                                      \
           <std::remove_reference<decltype(CTR)>::type, Module>()
@@ -142,26 +141,6 @@ namespace wazuhl {
 #undef MODULE_PASS_OR_ANALYSIS
       {[] { return nullptr; }} /// this is a terminal action
     };
-  }
-
-  ActionList::iterator ActionList::begin() {
-    return PossibleActions.begin();
-  }
-
-  ActionList::iterator ActionList::end() {
-    return PossibleActions.end();
-  }
-
-  ActionList::const_iterator ActionList::begin() const {
-    return PossibleActions.begin();
-  }
-
-  ActionList::const_iterator ActionList::end() const {
-    return PossibleActions.end();
-  }
-
-  size_t ActionList::size() const {
-    return PossibleActions.size();
   }
 }
 }
