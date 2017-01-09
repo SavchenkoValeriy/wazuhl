@@ -6,6 +6,11 @@ namespace wazuhl {
   class A {};
   class State {};
 
+  template <class Function>
+  A argmax(const Function &);
+  template <class Function>
+  typename Function::ResultT max(const Function&);
+
   template <class SimulatorT, class QType, class PolicyT>
   class QLearning {
   public:
