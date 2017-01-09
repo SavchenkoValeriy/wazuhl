@@ -41,6 +41,8 @@
 #include "llvm/IR/PassManager.h"
 #include "llvm/IR/Verifier.h"
 
+#include "llvm/Target/TargetMachine.h"
+
 #include "llvm/Transforms/GCOVProfiler.h"
 #include "llvm/Transforms/IPO/AlwaysInliner.h"
 #include "llvm/Transforms/IPO/ConstantMerge.h"
@@ -117,13 +119,18 @@
 #include "llvm/Transforms/Vectorize/LoopVectorize.h"
 #include "llvm/Transforms/Vectorize/SLPVectorizer.h"
 
+namespace {
+  // FIXME: this is a hack specifically made for TargetIRAnalysis
+  constexpr llvm::TargetMachine *TM = nullptr;
+}
+
 namespace llvm {
 namespace wazuhl {
   ActionList Action::getAllPossibleActions() {
     return {
-#define ANALYSIS_TO_MODULE_PASS(CTR)                                           \
+#define ANALYSIS_TO_PASS(CTR, IR_TYPE)                                         \
       RequireAnalysisPass                                                      \
-          <std::remove_reference<decltype(CTR)>::type, Module>()
+          <std::remove_reference<decltype(CTR)>::type, IR_TYPE>()
 #define MODULE_PASS_OR_ANALYSIS(NAME, CTR)                                     \
       {[] {                                                                    \
         using PassT = decltype(CTR);                                           \
@@ -135,10 +142,32 @@ namespace wazuhl {
 #define MODULE_PASS(NAME, CREATE_PASS)                                         \
       MODULE_PASS_OR_ANALYSIS(NAME, CREATE_PASS)
 #define MODULE_ANALYSIS(NAME, CREATE_PASS)                                     \
-      MODULE_PASS_OR_ANALYSIS(NAME, ANALYSIS_TO_MODULE_PASS(CREATE_PASS))
+      MODULE_PASS_OR_ANALYSIS(NAME, ANALYSIS_TO_PASS(CREATE_PASS, Module))
+#define CGSCC_PASS_OR_ANALYSIS(NAME, CTR)                                      \
+      MODULE_PASS_OR_ANALYSIS(NAME, createModuleToPostOrderCGSCCPassAdaptor(CTR))
+#define CGSCC_PASS(NAME, CREATE_PASS)                                          \
+      CGSCC_PASS_OR_ANALYSIS(NAME, CREATE_PASS)
+// Couldn't use the only CG level analysis
+//#define CGSCC_ANALYSIS(NAME, CREATE_PASS)                                      \
+//      CGSCC_PASS_OR_ANALYSIS(NAME, ANALYSIS_TO_PASS(CREATE_PASS, LazyCallGraph::SCC))
+#define FUNCTION_PASS_OR_ANALYSIS(NAME, CTR)                                   \
+      MODULE_PASS_OR_ANALYSIS(NAME, createModuleToFunctionPassAdaptor(CTR))
+#define FUNCTION_PASS(NAME, CREATE_PASS)                                       \
+      FUNCTION_PASS_OR_ANALYSIS(NAME, CREATE_PASS)
+#define FUNCTION_ANALYSIS(NAME, CREATE_PASS)                                   \
+      FUNCTION_PASS_OR_ANALYSIS(NAME, ANALYSIS_TO_PASS(CREATE_PASS, Function))
+#define LOOP_PASS_OR_ANALYSIS(NAME, CTR)                                       \
+      FUNCTION_PASS_OR_ANALYSIS(NAME, createFunctionToLoopPassAdaptor(CTR))
+#define LOOP_PASS(NAME, CREATE_PASS)                                           \
+      LOOP_PASS_OR_ANALYSIS(NAME, CREATE_PASS)
+#define LOOP_ANALYSIS(NAME, CREATE_PASS)                                       \
+      LOOP_PASS_OR_ANALYSIS(NAME, ANALYSIS_TO_PASS(CREATE_PASS, Loop))
 
 #include "PassRegistry.def"
 #undef MODULE_PASS_OR_ANALYSIS
+#undef CGSCC_PASS_OR_ANALYSIS
+#undef FUNCTION_PASS_OR_ANALYSIS
+#undef LOOP_PASS_OR_ANALYSIS
       {[] { return nullptr; }} /// this is a terminal action
     };
   }
