@@ -119,9 +119,17 @@
 #include "llvm/Transforms/Vectorize/LoopVectorize.h"
 #include "llvm/Transforms/Vectorize/SLPVectorizer.h"
 
+using namespace llvm::wazuhl;
+
 namespace {
   // FIXME: this is a hack specifically made for TargetIRAnalysis
   constexpr llvm::TargetMachine *TM = nullptr;
+
+  inline bool isActionUsefull(const Action& a) {
+    auto ActionName = a.getName();
+    return !(ActionName.startswith("print") ||
+             ActionName.startswith("pgo"));
+  }
 }
 
 namespace llvm {
@@ -175,7 +183,7 @@ namespace wazuhl {
     auto FilteredListOfActions =
       make_filter_range(EverySinglePossiblePass,
                         [] (const Action &a) {
-                          return !a.getName().startswith("print");
+                          return isActionUsefull(a);
                         });
     return {FilteredListOfActions.begin(), FilteredListOfActions.end()};
   }
