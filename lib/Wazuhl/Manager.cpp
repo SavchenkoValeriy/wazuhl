@@ -1,4 +1,6 @@
 #include "llvm/Wazuhl/Manager.h"
+#include "llvm/Wazuhl/Action.h"
+#include <random>
 
 namespace llvm {
 namespace wazuhl {

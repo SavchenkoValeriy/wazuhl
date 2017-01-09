@@ -2,6 +2,7 @@
 #define LLVM_WAZUHL_ACTION_H
 
 #include "llvm/IR/PassManagerInternal.h"
+#include <vector>
 
 namespace llvm {
 
