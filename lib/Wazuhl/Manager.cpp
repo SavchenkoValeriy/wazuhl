@@ -17,12 +17,14 @@ namespace wazuhl {
     std::default_random_engine generator;
     std::uniform_int_distribution<int> distribution(0, AllActions.size() - 1);
 
+    errs() << "Wazuhl has " << AllActions.size() << " actions to choose from\n";
+
     for (auto i = 1; i <= 15; ++i) {
       const Action &chosen = AllActions.at(distribution(generator));
       auto *Pass = chosen.takeAction();
       if (!Pass) break; // terminal action has been met
 
-      errs() << "Wazuhl is running " << Pass->name() << "\n";
+      errs() << "Wazuhl is running " << chosen.getName() << "\n";
 
       PreservedAnalyses PassPA = Pass->run(IR, AM);
 

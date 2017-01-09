@@ -132,13 +132,15 @@ namespace wazuhl {
       RequireAnalysisPass                                                      \
           <std::remove_reference<decltype(CTR)>::type, IR_TYPE>()
 #define MODULE_PASS_OR_ANALYSIS(NAME, CTR)                                     \
-      {[] {                                                                    \
-        using PassT = decltype(CTR);                                           \
-        using WrapperType = detail::PassModel<Module, PassT,                   \
-                                              PreservedAnalyses,               \
-                                              AnalysisManager<Module>>;        \
-        return new WrapperType(CTR);                                           \
-        }},
+      { NAME,                                                                  \
+        [] {                                                                   \
+          using PassT = decltype(CTR);                                         \
+          using WrapperType = detail::PassModel<Module, PassT,                 \
+                                                PreservedAnalyses,             \
+                                                AnalysisManager<Module>>;      \
+          return new WrapperType(CTR);                                         \
+        }                                                                      \
+      },
 #define MODULE_PASS(NAME, CREATE_PASS)                                         \
       MODULE_PASS_OR_ANALYSIS(NAME, CREATE_PASS)
 #define MODULE_ANALYSIS(NAME, CREATE_PASS)                                     \
@@ -168,7 +170,7 @@ namespace wazuhl {
 #undef CGSCC_PASS_OR_ANALYSIS
 #undef FUNCTION_PASS_OR_ANALYSIS
 #undef LOOP_PASS_OR_ANALYSIS
-      {[] { return nullptr; }} /// this is a terminal action
+      {"terminal", [] { return nullptr; }} /// this is a terminal action
     };
   }
 }

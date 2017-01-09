@@ -2,6 +2,7 @@
 #define LLVM_WAZUHL_ACTION_H
 
 #include "llvm/IR/PassManagerInternal.h"
+#include <string>
 #include <vector>
 
 namespace llvm {
@@ -18,12 +19,18 @@ namespace wazuhl {
   class Action {
   private:
     using PassConstructorT = std::function<ActionResult *()>;
+    std::string Name;
     PassConstructorT PassConstructor;
-    Action(PassConstructorT ctor) : PassConstructor(ctor) {}
+    Action(const std::string &name, PassConstructorT ctor) :
+      Name(name), PassConstructor(ctor) {}
   public:
 
     ActionResult *takeAction() const {
       return PassConstructor();
+    }
+
+    const StringRef getName() const {
+      return Name;
     }
 
     static ActionList getAllPossibleActions();
