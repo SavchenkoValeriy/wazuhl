@@ -127,7 +127,7 @@ namespace {
 namespace llvm {
 namespace wazuhl {
   ActionList Action::getAllPossibleActions() {
-    return {
+    ActionList EverySinglePossiblePass {
 #define ANALYSIS_TO_PASS(CTR, IR_TYPE)                                         \
       RequireAnalysisPass                                                      \
           <std::remove_reference<decltype(CTR)>::type, IR_TYPE>()
@@ -149,7 +149,7 @@ namespace wazuhl {
       MODULE_PASS_OR_ANALYSIS(NAME, createModuleToPostOrderCGSCCPassAdaptor(CTR))
 #define CGSCC_PASS(NAME, CREATE_PASS)                                          \
       CGSCC_PASS_OR_ANALYSIS(NAME, CREATE_PASS)
-// Couldn't use the only CG level analysis
+//FIXME: Couldn't use the only CG level analysis
 //#define CGSCC_ANALYSIS(NAME, CREATE_PASS)                                      \
 //      CGSCC_PASS_OR_ANALYSIS(NAME, ANALYSIS_TO_PASS(CREATE_PASS, LazyCallGraph::SCC))
 #define FUNCTION_PASS_OR_ANALYSIS(NAME, CTR)                                   \
@@ -172,6 +172,12 @@ namespace wazuhl {
 #undef LOOP_PASS_OR_ANALYSIS
       {"terminal", [] { return nullptr; }} /// this is a terminal action
     };
+    auto FilteredListOfActions =
+      make_filter_range(EverySinglePossiblePass,
+                        [] (const Action &a) {
+                          return !a.getName().startswith("print");
+                        });
+    return {FilteredListOfActions.begin(), FilteredListOfActions.end()};
   }
 }
 }
