@@ -1,5 +1,7 @@
 #include "llvm/Wazuhl/Manager.h"
 #include "llvm/Wazuhl/Action.h"
+#include "llvm/Wazuhl/Random.h"
+#include "llvm/Wazuhl/ReinforcementLearning.h"
 #include <random>
 
 namespace llvm {
@@ -12,15 +14,12 @@ namespace wazuhl {
 
     ActionList AllActions = Action::getAllPossibleActions();
 
-    // this part here is temporal, until actual
-    // decision-making mechanism is introduced
-    std::default_random_engine generator;
-    std::uniform_int_distribution<int> distribution(0, AllActions.size() - 1);
-
     errs() << "Wazuhl has " << AllActions.size() << " actions to choose from\n";
 
     for (auto i = 1; i <= 15; ++i) {
-      const Action &chosen = AllActions.at(distribution(generator));
+      // this part here is temporal, until actual
+      // decision-making mechanism is introduced
+      const Action &chosen = random::pickOutOf(AllActions);
       auto *Pass = chosen.takeAction();
       if (!Pass) break; // terminal action has been met
 

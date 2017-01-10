@@ -5,4 +5,5 @@ include_directories(
 add_llvm_library(LLVMWazuhl
   Action.cpp
   Manager.cpp
+  Random.cpp
   )
