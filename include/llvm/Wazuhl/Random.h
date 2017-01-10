@@ -2,6 +2,7 @@
 #define LLVM_WAZUHL_RANDOM_H
 
 #include <cstddef>
+#include <iterator>
 
 namespace llvm {
 namespace wazuhl {
@@ -15,10 +16,10 @@ namespace random {
   bool flipACoin(double probability);
 
   template <class Range>
-  auto pickOutOf(const Range &values) -> decltype(*values.begin()) {
-    std::size_t size = values.end() - values.begin();
+  auto pickOutOf(const Range &values) -> decltype(*std::begin(values)) {
+      std::size_t size = std::end(values) - std::begin(values);
     std::size_t randomIndex = getRandomNumberFromRange(size - 1);
-    return *(values.begin() + randomIndex);
+    return *(std::begin(values) + randomIndex);
   }
 }
 }
