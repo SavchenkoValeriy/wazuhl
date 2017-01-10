@@ -5,10 +5,11 @@
 
 namespace llvm {
 namespace wazuhl {
+namespace rl {
   template <class Function>
-  typename Function::Action argmax(const Function &);
+  typename Function::Action argmax(const Function &&);
   template <class Function>
-  typename Function::Result max(const Function&);
+  typename Function::Result max(const Function &&);
 
   template <class ProblemT, class EnvironmentT, class QType, class PolicyT>
   class QLearning {
@@ -21,7 +22,7 @@ namespace wazuhl {
 
     void learn() {
       State S = Environment.getState();
-      while(Environment.isInTerminalState()) {
+      while(!Environment.isInTerminalState()) {
         Action A = Policy.pick(S);
         Environment.takeAction(A);
         State newS = Environment.getState();
@@ -61,7 +62,7 @@ namespace wazuhl {
       using Action = typename Function::Action;
       using State  = typename Function::State;
 
-      Action pick(const State &s) {
+      Action pick(const State &s) const {
         // TODO implement a random picking strategy
         return {};
       }
@@ -75,7 +76,7 @@ namespace wazuhl {
 
       EpsilonGreedy(double epsilon, const Function & valueFuncion) :
         epsilon(epsilon), Greedy<Function>(valueFuncion), Random<Function>() {}
-      Action pick(const State &s) {
+      Action pick(const State &s) const {
         if (random::flipACoin(epsilon))
           return Random<Function>::pick(s);
         return Greedy<Function>::pick(s);
@@ -84,6 +85,7 @@ namespace wazuhl {
       double epsilon;
     };
   }
+}
 }
 }
 
