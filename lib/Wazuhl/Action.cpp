@@ -124,7 +124,7 @@ using namespace llvm::wazuhl;
 namespace {
   // FIXME: this is a hack specifically made for TargetIRAnalysis
   constexpr llvm::TargetMachine *TM = nullptr;
-  const std::string uselessPrefixes[] = {"print", "pgo", "dot"};
+  const std::string uselessPrefixes[] = {"print", "pgo", "dot", "view"};
 
   inline bool isActionUsefull(const Action& a) {
     auto &ActionName = a.getName();
