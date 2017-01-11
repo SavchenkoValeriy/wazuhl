@@ -63,8 +63,8 @@ namespace rl {
       using State  = typename Function::State;
 
       Action pick(const State &s) const {
-        // TODO implement a random picking strategy
-        return {};
+        static const auto &allActions = Action::getAllActions();
+        return random::pickOutOf(allActions);
       }
     };
 
@@ -74,8 +74,8 @@ namespace rl {
       using Action = typename Function::Action;
       using State  = typename Function::State;
 
-      EpsilonGreedy(double epsilon, const Function & valueFuncion) :
-        epsilon(epsilon), Greedy<Function>(valueFuncion), Random<Function>() {}
+      EpsilonGreedy(double epsilon, const Function &valueFuncion) :
+        Greedy<Function>(valueFuncion), Random<Function>(), epsilon(epsilon) {}
       Action pick(const State &s) const {
         if (random::flipACoin(epsilon))
           return Random<Function>::pick(s);
