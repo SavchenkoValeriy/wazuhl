@@ -1,4 +1,5 @@
 #include "llvm/Wazuhl/ReinforcementLearning.h"
+#include "llvm/Support/raw_ostream.h"
 #include "gtest/gtest.h"
 #include <vector>
 
@@ -23,7 +24,7 @@ public:
     enum Direction { Left, Right };
     Direction direction;
 
-    using AllDirections = Direction[2];
+    using AllDirections = Action[2];
     static const AllDirections &getAllActions() {
       return all;
     }
@@ -65,8 +66,6 @@ public:
 };
 
 class Q {
-private:
-
 public:
   using State  = TestProblem::State;
   using Action = TestProblem::Action;
@@ -82,54 +81,82 @@ public:
     Result &operator() (const Action &A) {
       return values[index(A)];
     }
+    Result operator() (const Action &A) const {
+      return values[index(A)];
+    }
   private:
-    int index(const Action &A) {
+    int index(const Action &A) const {
       return A.direction == Action::Left ? 1 : 0;
     }
 
     Result (&values)[2];
 
-    friend Action rl::argmax<CurriedQ>(const CurriedQ &);
+    friend Action rl::argmax<CurriedQ>(const CurriedQ &&);
+    friend Result rl::max<CurriedQ>(const CurriedQ &&);
   };
 
   CurriedQ operator() (const State &S) {
     return {values[index(S)]};
   }
+  const CurriedQ operator() (const State &S) const {
+    return {values[index(S)]};
+  }
   Result &operator() (const State &S, const Action &A) {
+    return (*this)(S)(A);
+  }
+  Result operator() (const State &S, const Action &A) const {
     return (*this)(S)(A);
   }
   void update(const State &S, const Action &A, Result value) {
     (*this)(S, A) = value;
   }
+
 private:
-  int index(const State &S) {
+  int index(const State &S) const {
     return S.position + 1;
   }
 
-  Result values[NumberOfStates][2] = { {0} };
+  mutable Result values[NumberOfStates][2] = { {0} };
+  friend raw_ostream &operator<< (raw_ostream &, const Q &);
 };
 
+raw_ostream &operator<< (raw_ostream &out, const Q &function) {
+  auto printAction = [&](const StringRef name, int offset) {
+    out << name << ": ";
+    for (int i = 0; i < NumberOfStates - 1; ++i) {
+      out << function.values[i][offset];
+      out << ", ";
+    }
+    out << function.values[NumberOfStates - 1][offset] << "\n";
+  };
+  printAction("Right", 0);
+  printAction("Left", 1);
+  return out;
+}
+
 template <>
-Q::CurriedQ::Action rl::argmax(const Q::CurriedQ &F) {
+Q::CurriedQ::Action rl::argmax(const Q::CurriedQ &&F) {
   return {F.values[0] > F.values[1] ? Q::Action::Right : Q::Action::Left};
 }
 
 template <>
-Q::CurriedQ::Result rl::max(const Q::CurriedQ &F) {
-  return std::max(F.values);
+Q::CurriedQ::Result rl::max(const Q::CurriedQ &&F) {
+  return *std::max_element(std::begin(F.values), std::end(F.values));
 }
 
 TestProblem::Action::AllDirections
-TestProblem::Action::all = { TestProblem::Action::Left,
-                             TestProblem::Action::Right };
+TestProblem::Action::all = { { TestProblem::Action::Left },
+                             { TestProblem::Action::Right } };
 
 TEST(ReinforcementLearning, QLearning) {
   TestProblem::Environment env;
   Q function;
-  rl::policies::EpsilonGreedy<Q> policy{0.1, function};
-  rl::QLearning<TestProblem, TestProblem::Environment, Q, decltype(policy)> learner{env, function, policy, 0.8, 0.99};
+  rl::policies::EpsilonGreedy<Q> policy{0.7, function};
+  rl::QLearning<TestProblem, TestProblem::Environment, Q, decltype(policy)> learner{env, function, policy, 1, 0.99};
+  double TotalReward = 0;
   for (int i = 0; i < 1000; ++i) {
     learner.learn();
+    TotalReward += env.getReward();
     env.reset();
   }
 }
