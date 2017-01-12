@@ -91,8 +91,8 @@ public:
 
     Result (&values)[2];
 
-    friend Action rl::argmax<CurriedQ>(const CurriedQ &&);
-    friend Result rl::max<CurriedQ>(const CurriedQ &&);
+    friend Action rl::argmax<CurriedQ>(const CurriedQ &);
+    friend Result rl::max<CurriedQ>(const CurriedQ &);
   };
 
   CurriedQ operator() (const State &S) {
@@ -136,12 +136,12 @@ raw_ostream &operator<< (raw_ostream &out, const Q &function) {
 }
 
 template <>
-Q::CurriedQ::Action rl::argmax(const Q::CurriedQ &&F) {
+Q::CurriedQ::Action rl::argmax(const Q::CurriedQ &F) {
   return {F.values[0] > F.values[1] ? Q::Action::Right : Q::Action::Left};
 }
 
 template <>
-Q::CurriedQ::Result rl::max(const Q::CurriedQ &&F) {
+Q::CurriedQ::Result rl::max(const Q::CurriedQ &F) {
   return *std::max_element(std::begin(F.values), std::end(F.values));
 }
 
@@ -169,4 +169,74 @@ TEST(ReinforcementLearning, QLearning) {
       EXPECT_GT(Q_s[right], Q_s[left]);
     }
   }
+}
+
+class QMock {
+public:
+  using Result = double;
+  using Action = TestProblem::Action;
+  using State = TestProblem::State;
+  const QMock &operator() (const State &) const {
+    return *this;
+  }
+};
+
+template <>
+QMock::Action rl::argmax(const QMock &F) {
+  return {QMock::Action::Right};
+}
+
+template <>
+QMock::Result rl::max(const QMock &F) {
+  return 10.0;
+}
+
+constexpr int NumberOfIterations = 5000;
+
+using PicksT = SmallVector<int, 2>;
+template <class Policy>
+PicksT getPicksForPolicy(const Policy &policy) {
+  PicksT result{ 0, 0 };
+  TestProblem::State S{3};
+  for (int i = 0; i < NumberOfIterations; ++i) {
+    ++result[policy.pick(S).direction];
+  }
+  return result;
+}
+
+class RandomEq {
+public:
+  RandomEq(double precision) : epsilon(precision) {}
+  bool operator() (double result, double expected) {
+    return (result < expected + epsilon * expected) &&
+           (result > expected - epsilon * expected);
+  }
+private:
+  double epsilon;
+};
+
+TEST(ReinforcementLearning, Greedy) {
+  QMock function;
+  rl::policies::Greedy<QMock> policy{function};
+  auto picks = getPicksForPolicy(policy);
+  EXPECT_EQ(picks[QMock::Action::Right], NumberOfIterations);
+  EXPECT_EQ(picks[QMock::Action::Left], 0);
+}
+
+TEST(ReinforcementLearning, Random) {
+  rl::policies::Random<QMock> policy;
+  auto picks = getPicksForPolicy(policy);
+  EXPECT_PRED2(RandomEq{0.05}, picks[QMock::Action::Right], NumberOfIterations / 2);
+  EXPECT_PRED2(RandomEq{0.05}, picks[QMock::Action::Left], NumberOfIterations / 2);
+}
+
+TEST(ReinforcementLearning, EpsilonGreedy) {
+  QMock function;
+  double epsilon = 0.6;
+  rl::policies::EpsilonGreedy<QMock> policy{epsilon, function};
+  auto picks = getPicksForPolicy(policy);
+  EXPECT_PRED2(RandomEq{0.05}, picks[QMock::Action::Right],
+               (1 - epsilon / 2) * NumberOfIterations);
+  EXPECT_PRED2(RandomEq{0.05}, picks[QMock::Action::Left],
+               (epsilon / 2) * NumberOfIterations);
 }

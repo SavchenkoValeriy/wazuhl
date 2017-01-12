@@ -7,9 +7,9 @@ namespace llvm {
 namespace wazuhl {
 namespace rl {
   template <class Function>
-  typename Function::Action argmax(const Function &&);
+  typename Function::Action argmax(const Function &);
   template <class Function>
-  typename Function::Result max(const Function &&);
+  typename Function::Result max(const Function &);
 
   template <class ProblemT, class EnvironmentT, class QType, class PolicyT>
   class QLearning {
