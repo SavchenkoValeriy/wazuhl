@@ -118,6 +118,7 @@ private:
 
   mutable Result values[NumberOfStates][2] = { {0} };
   friend raw_ostream &operator<< (raw_ostream &, const Q &);
+  FRIEND_TEST(ReinforcementLearning, QLearning);
 };
 
 raw_ostream &operator<< (raw_ostream &out, const Q &function) {
@@ -152,11 +153,20 @@ TEST(ReinforcementLearning, QLearning) {
   TestProblem::Environment env;
   Q function;
   rl::policies::EpsilonGreedy<Q> policy{0.7, function};
-  rl::QLearning<TestProblem, TestProblem::Environment, Q, decltype(policy)> learner{env, function, policy, 1, 0.99};
+  rl::QLearning<TestProblem, TestProblem::Environment, Q, decltype(policy)>
+    learner{env, function, policy, 1, 0.99};
   double TotalReward = 0;
   for (int i = 0; i < 1000; ++i) {
     learner.learn();
     TotalReward += env.getReward();
     env.reset();
+  }
+  constexpr int right = 0, left = 1;
+  for (auto Q_s : function.values) {
+    if (Q_s[right] == 0) {
+      EXPECT_EQ(Q_s[right], Q_s[left]);
+    } else {
+      EXPECT_GT(Q_s[right], Q_s[left]);
+    }
   }
 }
