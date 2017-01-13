@@ -58,6 +58,7 @@ class StatisticInfo {
   friend void llvm::PrintStatistics();
   friend void llvm::PrintStatistics(raw_ostream &OS);
   friend void llvm::PrintStatisticsJSON(raw_ostream &OS);
+  friend llvm::StatisticsVector llvm::GetStatisticsVector();
 
   /// Sort statistics by debugtype,name,description.
   void sort();
@@ -205,4 +206,18 @@ void llvm::PrintStatistics() {
                  << "Build with asserts or with -DLLVM_ENABLE_STATS\n";
   }
 #endif
+}
+
+llvm::StatisticsVector llvm::GetStatisticsVector() {
+  StatisticInfo &Stats = *StatInfo;
+
+  // no statistics collected
+  if (Stats.Stats.empty()) return {};
+
+  StatisticsVector result;
+  llvm::transform(Stats.Stats, std::inserter(result, result.begin()),
+                  [](const Statistic *Stat) {
+                    return Stat->getValue();
+                  });
+  return result;
 }

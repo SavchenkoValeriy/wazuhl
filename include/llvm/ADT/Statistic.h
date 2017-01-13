@@ -30,6 +30,7 @@
 #include "llvm/Support/Compiler.h"
 #include <atomic>
 #include <memory>
+#include <vector>
 
 namespace llvm {
 
@@ -170,6 +171,9 @@ void PrintStatistics(raw_ostream &OS);
 /// not be printed in human readable form or in a second call of
 /// PrintStatisticsJSON().
 void PrintStatisticsJSON(raw_ostream &OS);
+
+typedef std::vector<double> StatisticsVector;
+StatisticsVector GetStatisticsVector();
 
 } // end namespace llvm
 

@@ -2,7 +2,18 @@
 #include "llvm/Wazuhl/Action.h"
 #include "llvm/Wazuhl/Random.h"
 #include "llvm/Wazuhl/ReinforcementLearning.h"
+#include "llvm/ADT/Statistic.h"
 #include <random>
+
+namespace {
+  int numberOfNonNullStatistics() {
+    auto Statistics = llvm::GetStatisticsVector();
+    return std::accumulate(Statistics.begin(), Statistics.end(), 0,
+                           [](int total, double value) {
+                             return total + (value != 0);
+                           });
+  }
+}
 
 namespace llvm {
 namespace wazuhl {
@@ -13,6 +24,7 @@ namespace wazuhl {
       dbgs() << "Starting Wazuhl optimization process.\n";
 
     ActionList AllActions = Action::getAllPossibleActions();
+    EnableStatistics(false /*we don't want to print statistics*/);
 
     errs() << "Wazuhl has " << AllActions.size() << " actions to choose from\n";
 
@@ -26,6 +38,9 @@ namespace wazuhl {
       errs() << "Wazuhl is running " << chosen.getName() << "\n";
 
       PreservedAnalyses PassPA = Pass->run(IR, AM);
+
+      errs() << "Pass had produced " << numberOfNonNullStatistics() <<
+        " non-null statistic values\n";
 
       // Update the analysis manager as each pass runs and potentially
       // invalidates analyses.
