@@ -50,6 +50,13 @@ public:
   const char *getName() const { return Name; }
   const char *getDesc() const { return Desc; }
 
+#if defined (LLVM_ENABLE_WAZUHL)
+  Statistic(const char *debugtype, const char *name, const char *desc,
+            unsigned &&value, bool initialized) :
+    DebugType(debugtype), Name(name), Desc(desc),
+    Value(value), Initialized(initialized) { init(); }
+#endif
+
   /// construct - This should only be called for non-global statistics.
   void construct(const char *debugtype, const char *name, const char *desc) {
     DebugType = debugtype;

@@ -49,6 +49,10 @@ if(LLVM_ENABLE_EXPENSIVE_CHECKS)
   add_definitions(-D_GLIBCXX_DEBUG)
 endif()
 
+if(LLVM_ENABLE_WAZUHL)
+  add_definitions(-DLLVM_ENABLE_WAZUHL)
+endif()
+
 if(LLVM_ENABLE_STATS)
   add_definitions(-DLLVM_ENABLE_STATS)
 endif()
