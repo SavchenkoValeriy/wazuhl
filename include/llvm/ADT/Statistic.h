@@ -30,6 +30,7 @@
 #include "llvm/Support/Compiler.h"
 #include <atomic>
 #include <memory>
+#include <vector>
 
 namespace llvm {
 
@@ -48,6 +49,13 @@ public:
   const char *getDebugType() const { return DebugType; }
   const char *getName() const { return Name; }
   const char *getDesc() const { return Desc; }
+
+#if defined (LLVM_ENABLE_WAZUHL)
+  Statistic(const char *debugtype, const char *name, const char *desc,
+            unsigned &&value, bool initialized) :
+    DebugType(debugtype), Name(name), Desc(desc),
+    Value(value), Initialized(initialized) { init(); }
+#endif
 
   /// construct - This should only be called for non-global statistics.
   void construct(const char *debugtype, const char *name, const char *desc) {
@@ -170,6 +178,9 @@ void PrintStatistics(raw_ostream &OS);
 /// not be printed in human readable form or in a second call of
 /// PrintStatisticsJSON().
 void PrintStatisticsJSON(raw_ostream &OS);
+
+typedef std::vector<double> StatisticsVector;
+StatisticsVector GetStatisticsVector();
 
 } // end namespace llvm
 
