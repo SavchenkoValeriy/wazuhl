@@ -803,7 +803,7 @@ static bool computeUnrollCount(
           UP.Count >>= 1;
       }
       if (UP.Count < 2) {
-        if (PragmaEnableUnroll)
+        if (ORE && PragmaEnableUnroll)
           ORE->emit(
               OptimizationRemarkMissed(DEBUG_TYPE, "UnrollAsDirectedTooLarge",
                                        L->getStartLoc(), L->getHeader())
@@ -814,7 +814,7 @@ static bool computeUnrollCount(
     } else {
       UP.Count = TripCount;
     }
-    if ((PragmaFullUnroll || PragmaEnableUnroll) && TripCount &&
+    if (ORE && (PragmaFullUnroll || PragmaEnableUnroll) && TripCount &&
         UP.Count != TripCount)
       ORE->emit(
           OptimizationRemarkMissed(DEBUG_TYPE, "FullUnrollAsDirectedTooLarge",
@@ -825,7 +825,7 @@ static bool computeUnrollCount(
   }
   assert(TripCount == 0 &&
          "All cases when TripCount is constant should be covered here.");
-  if (PragmaFullUnroll)
+  if (ORE && PragmaFullUnroll)
     ORE->emit(
         OptimizationRemarkMissed(DEBUG_TYPE,
                                  "CantFullUnrollAsDirectedRuntimeTripCount",
@@ -889,7 +889,7 @@ static bool computeUnrollCount(
                  << TripMultiple << ".  Reducing unroll count from "
                  << OrigCount << " to " << UP.Count << ".\n");
     using namespace ore;
-    if (PragmaCount > 0 && !UP.AllowRemainder)
+    if (ORE && PragmaCount > 0 && !UP.AllowRemainder)
       ORE->emit(
           OptimizationRemarkMissed(DEBUG_TYPE,
                                    "DifferentUnrollCountFromDirected",
@@ -1119,10 +1119,6 @@ PreservedAnalyses LoopUnrollPass::run(Loop &L, LoopAnalysisManager &AM,
   Function *F = L.getHeader()->getParent();
 
   auto *ORE = FAM.getCachedResult<OptimizationRemarkEmitterAnalysis>(*F);
-  // FIXME: This should probably be optional rather than required.
-  if (!ORE)
-    report_fatal_error("LoopUnrollPass: OptimizationRemarkEmitterAnalysis not "
-                       "cached at a higher level");
 
   bool Changed = tryToUnrollLoop(&L, AR.DT, &AR.LI, &AR.SE, AR.TTI, AR.AC, *ORE,
                                  /*PreserveLCSSA*/ true, ProvidedCount,
