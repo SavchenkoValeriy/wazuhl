@@ -192,10 +192,6 @@ PreservedAnalyses LICMPass::run(Loop &L, LoopAnalysisManager &AM,
   Function *F = L.getHeader()->getParent();
 
   auto *ORE = FAM.getCachedResult<OptimizationRemarkEmitterAnalysis>(*F);
-  // FIXME: This should probably be optional rather than required.
-  if (!ORE)
-    report_fatal_error("LICM: OptimizationRemarkEmitterAnalysis not "
-                       "cached at a higher level");
 
   LoopInvariantCodeMotion LICM;
   if (!LICM.runOnLoop(&L, &AR.AA, &AR.LI, &AR.DT, &AR.TLI, &AR.SE, ORE, true))
@@ -708,8 +704,9 @@ static bool sink(Instruction &I, const LoopInfo *LI, const DominatorTree *DT,
                  const LoopSafetyInfo *SafetyInfo,
                  OptimizationRemarkEmitter *ORE) {
   DEBUG(dbgs() << "LICM sinking instruction: " << I << "\n");
-  ORE->emit(OptimizationRemark(DEBUG_TYPE, "InstSunk", &I)
-            << "sinking " << ore::NV("Inst", &I));
+  if (ORE)
+    ORE->emit(OptimizationRemark(DEBUG_TYPE, "InstSunk", &I)
+             << "sinking " << ore::NV("Inst", &I));
   bool Changed = false;
   if (isa<LoadInst>(I))
     ++NumMovedLoads;
@@ -781,8 +778,9 @@ static bool hoist(Instruction &I, const DominatorTree *DT, const Loop *CurLoop,
   auto *Preheader = CurLoop->getLoopPreheader();
   DEBUG(dbgs() << "LICM hoisting to " << Preheader->getName() << ": " << I
                << "\n");
-  ORE->emit(OptimizationRemark(DEBUG_TYPE, "Hoisted", &I)
-            << "hosting " << ore::NV("Inst", &I));
+  if (ORE)
+    ORE->emit(OptimizationRemark(DEBUG_TYPE, "Hoisted", &I)
+             << "hosting " << ore::NV("Inst", &I));
 
   // Metadata can be dependent on conditions we are hoisting above.
   // Conservatively strip all metadata on the instruction unless we were
@@ -831,7 +829,7 @@ static bool isSafeToExecuteUnconditionally(Instruction &Inst,
 
   if (!GuaranteedToExecute) {
     auto *LI = dyn_cast<LoadInst>(&Inst);
-    if (LI && CurLoop->isLoopInvariant(LI->getPointerOperand()))
+    if (ORE && LI && CurLoop->isLoopInvariant(LI->getPointerOperand()))
       ORE->emit(OptimizationRemarkMissed(
                     DEBUG_TYPE, "LoadWithLoopInvariantAddressCondExecuted", LI)
                 << "failed to hoist load with loop-invariant address "
@@ -1119,9 +1117,10 @@ bool llvm::promoteLoopAccessesToScalars(
   // Otherwise, this is safe to promote, lets do it!
   DEBUG(dbgs() << "LICM: Promoting value stored to in loop: " << *SomePtr
                << '\n');
-  ORE->emit(
-      OptimizationRemark(DEBUG_TYPE, "PromoteLoopAccessesToScalar", LoopUses[0])
-      << "Moving accesses to memory location out of the loop");
+  if(ORE)
+    ORE->emit(
+             OptimizationRemark(DEBUG_TYPE, "PromoteLoopAccessesToScalar", LoopUses[0])
+             << "Moving accesses to memory location out of the loop");
   ++NumPromoted;
 
   // Grab a debug location for the inserted loads/stores; given that the
