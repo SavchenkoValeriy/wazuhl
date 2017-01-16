@@ -78,14 +78,17 @@
 #include "llvm/Transforms/Scalar/Float2Int.h"
 #include "llvm/Transforms/Scalar/GVN.h"
 #include "llvm/Transforms/Scalar/GuardWidening.h"
+#include "llvm/Transforms/Scalar/IVUsersPrinter.h"
 #include "llvm/Transforms/Scalar/IndVarSimplify.h"
 #include "llvm/Transforms/Scalar/JumpThreading.h"
 #include "llvm/Transforms/Scalar/LICM.h"
+#include "llvm/Transforms/Scalar/LoopAccessAnalysisPrinter.h"
 #include "llvm/Transforms/Scalar/LoopDataPrefetch.h"
 #include "llvm/Transforms/Scalar/LoopDeletion.h"
 #include "llvm/Transforms/Scalar/LoopDistribute.h"
 #include "llvm/Transforms/Scalar/LoopIdiomRecognize.h"
 #include "llvm/Transforms/Scalar/LoopInstSimplify.h"
+#include "llvm/Transforms/Scalar/LoopPassManager.h"
 #include "llvm/Transforms/Scalar/LoopRotation.h"
 #include "llvm/Transforms/Scalar/LoopSimplifyCFG.h"
 #include "llvm/Transforms/Scalar/LoopStrengthReduce.h"
@@ -172,8 +175,8 @@ namespace wazuhl {
       FUNCTION_PASS_OR_ANALYSIS(NAME, createFunctionToLoopPassAdaptor(CTR))
 #define LOOP_PASS(NAME, CREATE_PASS)                                           \
       LOOP_PASS_OR_ANALYSIS(NAME, CREATE_PASS)
-#define LOOP_ANALYSIS(NAME, CREATE_PASS)                                       \
-      LOOP_PASS_OR_ANALYSIS(NAME, ANALYSIS_TO_PASS(CREATE_PASS, Loop))
+      //#define LOOP_ANALYSIS(NAME, CREATE_PASS)    \
+      //      LOOP_PASS_OR_ANALYSIS(NAME, CREATE_PASS)
 
 #include "PassRegistry.def"
 #undef MODULE_PASS_OR_ANALYSIS
