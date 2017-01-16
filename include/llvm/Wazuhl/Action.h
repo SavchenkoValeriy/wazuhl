@@ -21,9 +21,9 @@ namespace wazuhl {
     using PassConstructorT = std::function<ActionResult *()>;
     std::string Name;
     PassConstructorT PassConstructor;
+  public:
     Action(const std::string &name, PassConstructorT ctor) :
       Name(name), PassConstructor(ctor) {}
-  public:
 
     ActionResult *takeAction() const {
       return PassConstructor();
@@ -34,6 +34,7 @@ namespace wazuhl {
     }
 
     static ActionList getAllPossibleActions();
+    static const Action &getActionByName(const StringRef);
   };
 }
 }

@@ -122,7 +122,8 @@
 #include "llvm/Transforms/Vectorize/LoopVectorize.h"
 #include "llvm/Transforms/Vectorize/SLPVectorizer.h"
 
-using namespace llvm::wazuhl;
+using namespace llvm;
+using namespace wazuhl;
 
 namespace {
   // FIXME: this is a hack specifically made for TargetIRAnalysis
@@ -139,11 +140,8 @@ namespace {
         return ActionName.endswith(x);
       });
   }
-}
 
-namespace llvm {
-namespace wazuhl {
-  ActionList Action::getAllPossibleActions() {
+  ActionList createAllPossibleActions() {
     ActionList EverySinglePossiblePass {
 #define ANALYSIS_TO_PASS(CTR, IR_TYPE)                                         \
       RequireAnalysisPass                                                      \
@@ -195,6 +193,28 @@ namespace wazuhl {
                           return isActionUsefull(a);
                         });
     return {FilteredListOfActions.begin(), FilteredListOfActions.end()};
+  }
+
+  ActionList AllPossibleActions = createAllPossibleActions();
+
+  using ActionMap = StringMap<const Action *>;
+  ActionMap createActionMap() {
+    ActionMap result{};
+    for (const Action &x : AllPossibleActions) {
+      result[x.getName()] = &x;
+    }
+    return result;
+  }
+}
+
+namespace llvm {
+namespace wazuhl {
+  ActionList Action::getAllPossibleActions() {
+    return AllPossibleActions;
+  }
+  const Action &Action::getActionByName(const llvm::StringRef Name) {
+    static ActionMap Actions;
+    return *Actions[Name];
   }
 }
 }
