@@ -128,11 +128,15 @@ namespace {
   // FIXME: this is a hack specifically made for TargetIRAnalysis
   constexpr llvm::TargetMachine *TM = nullptr;
   const std::string uselessPrefixes[] = {"print", "pgo", "dot", "view"};
+  const std::string uselessSuffixes[] = {"profile", "import"};
 
   inline bool isActionUsefull(const Action& a) {
     auto &ActionName = a.getName();
     return llvm::none_of(uselessPrefixes, [&ActionName](const std::string &x) {
         return ActionName.startswith(x);
+      }) &&
+      llvm::none_of(uselessSuffixes, [&ActionName](const std::string &x) {
+        return ActionName.endswith(x);
       });
   }
 }
