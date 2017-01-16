@@ -46,7 +46,12 @@ static cl::opt<bool> Stats("stats",
 static cl::opt<bool> StatsAsJSON("stats-json",
                                  cl::desc("Display statistics as json data"));
 
+#if defined (LLVM_ENABLE_WAZUHL)
+static bool Enabled = true;
+#else
 static bool Enabled;
+#endif
+
 static bool PrintOnExit;
 
 namespace {
