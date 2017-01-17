@@ -19,13 +19,20 @@ namespace {
     CollectorImpl() : CollectedFeatures(NumberOfFeatures),
                       TotalInsts(CollectedFeatures[0]) {}
 
-    FeatureVector getCollectedFeatures() {
+    FeatureVector &getCollectedFeatures() {
       return CollectedFeatures;
     }
   private:
     FeatureVector CollectedFeatures;
     double &TotalInsts;
   };
+
+  void normalizeVector(FeatureVector &features, double normalizationFactor) {
+    if (normalizationFactor == 0) return;
+    for (auto &feature : features) {
+      feature /= normalizationFactor;
+    }
+  }
 }
 
 namespace llvm {
@@ -33,7 +40,9 @@ namespace wazuhl {
   FeatureVector FunctionFeatureCollector::run(Function &F, FunctionAnalysisManager &) {
     CollectorImpl Collector;
     Collector.visit(F);
-    return Collector.getCollectedFeatures();
+    auto &result = Collector.getCollectedFeatures();
+    normalizeVector(result, result[0]);
+    return result;
   }
 
   FeatureVector ModuleFeatureCollector::run(Module &M, ModuleAnalysisManager &AM) {
@@ -48,11 +57,14 @@ namespace wazuhl {
     }
 
     FeatureVector result(NumberOfOpcodes);
-    for (unsigned i = 0; i < FeaturesOfAllFunctions.size(); ++i) {
+    const unsigned NumberOfFunctions = FeaturesOfAllFunctions.size();
+    for (unsigned i = 0; i < NumberOfFunctions; ++i) {
       for (unsigned j = 0; j < NumberOfFeatures; ++j) {
         result[j] += FeaturesOfAllFunctions[i][j];
       }
     }
+
+    normalizeVector(result, NumberOfFunctions);
     return result;
   }
 
