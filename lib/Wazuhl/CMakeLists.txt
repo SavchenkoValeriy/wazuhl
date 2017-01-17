@@ -4,6 +4,7 @@ include_directories(
 
 add_llvm_library(LLVMWazuhl
   Action.cpp
+  FeatureCollector.cpp
   Manager.cpp
   Random.cpp
   )

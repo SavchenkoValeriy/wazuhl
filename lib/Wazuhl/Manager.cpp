@@ -1,5 +1,6 @@
 #include "llvm/Wazuhl/Manager.h"
 #include "llvm/Wazuhl/Action.h"
+#include "llvm/Wazuhl/FeatureCollector.h"
 #include "llvm/Wazuhl/Random.h"
 #include "llvm/Wazuhl/ReinforcementLearning.h"
 #include "llvm/ADT/Statistic.h"
@@ -13,12 +14,22 @@ namespace {
                              return total + (value != 0);
                            });
   }
+
+  void registerFeatureCollectors(llvm::Module &M, llvm::ModuleAnalysisManager &AM) {
+    AM.registerPass([] { return llvm::wazuhl::ModuleFeatureCollector(); });
+
+    llvm::FunctionAnalysisManager &FAM =
+      AM.getResult<llvm::FunctionAnalysisManagerModuleProxy>(M).getManager();
+
+    FAM.registerPass([] { return llvm::wazuhl::FunctionFeatureCollector(); });
+  }
 }
 
 namespace llvm {
 namespace wazuhl {
-  PreservedAnalyses Manager::run(Module &IR, AnalysisManager<Module> &AM) {
+  PreservedAnalyses Manager::run(Module &IR, ModuleAnalysisManager &AM) {
     PreservedAnalyses PA = PreservedAnalyses::all();
+    registerFeatureCollectors(IR, AM);
 
     if (DebugLogging)
       dbgs() << "Starting Wazuhl optimization process.\n";
