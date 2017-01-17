@@ -213,7 +213,7 @@ namespace wazuhl {
     return AllPossibleActions;
   }
   const Action &Action::getActionByName(const llvm::StringRef Name) {
-    static ActionMap Actions;
+    static ActionMap Actions = createActionMap();
     return *Actions[Name];
   }
 }
