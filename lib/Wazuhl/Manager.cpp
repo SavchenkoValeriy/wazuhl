@@ -60,6 +60,11 @@ namespace wazuhl {
       // Finally, intersect the preserved analyses to compute the aggregate
       // preserved set for this pass manager.
       PA.intersect(std::move(PassPA));
+
+      auto features = AM.getResult<ModuleFeatureCollector>(IR);
+      llvm::errs() << "Features: \n";
+      for (auto value : features) errs() << value << ", ";
+      llvm::errs() << "\n\n";
     }
 
     return PA;

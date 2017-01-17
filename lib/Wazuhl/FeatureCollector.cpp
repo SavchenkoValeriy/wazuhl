@@ -14,6 +14,7 @@ namespace {
   public:
 #define HANDLE_INST(N, OPCODE, CLASS)                                   \
     void visit##OPCODE(CLASS &) { ++CollectedFeatures[N]; ++TotalInsts; }
+#include "llvm/IR/Instruction.def"
 
     CollectorImpl() : CollectedFeatures(NumberOfFeatures),
                       TotalInsts(CollectedFeatures[0]) {}
