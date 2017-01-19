@@ -18,3 +18,8 @@ add_llvm_library(LLVMWazuhl
   LINK_LIBS
   ${Caffe_LIBRARIES}
   )
+
+install(
+  FILES model.prototxt
+  DESTINATION wazuhl
+  )

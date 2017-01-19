@@ -1,0 +1,38 @@
+name: "wazuhl_DQN"
+name: "CaffeNet"
+layer {
+  name: "data"
+  type: "Input"
+  top: "data"
+  input_param { shape: { dim: 65 } }
+}
+layer {
+  name: "ip1"
+  type: "InnerProduct"
+  bottom: "data"
+  top: "ip1"
+  inner_product_param {
+    num_output: 120
+    weight_filler {
+      type: "xavier"
+    }
+  }
+}
+layer {
+  name: "bias"
+  type: "Bias"
+  bottom: "ip1"
+  top: "bias"
+}
+layer {
+  name: "actiation"
+  type: "TanH"
+  bottom: "bias"
+  top: "activation"
+}
+layer {
+  name: "loss"
+  type: "EuclideanLoss"
+  bottom: "activation"
+  top: "loss"
+}
