@@ -1,5 +1,6 @@
 #include "llvm/Wazuhl/Manager.h"
 #include "llvm/Wazuhl/Action.h"
+#include "llvm/Wazuhl/Environment.h"
 #include "llvm/Wazuhl/FeatureCollector.h"
 #include "llvm/Wazuhl/Random.h"
 #include "llvm/Wazuhl/ReinforcementLearning.h"
@@ -28,14 +29,13 @@ namespace {
 namespace llvm {
 namespace wazuhl {
   PreservedAnalyses Manager::run(Module &IR, ModuleAnalysisManager &AM) {
-    PreservedAnalyses PA = PreservedAnalyses::all();
+    Environment OptimizationEnv{IR, AM};
     registerFeatureCollectors(IR, AM);
 
     if (DebugLogging)
       dbgs() << "Starting Wazuhl optimization process.\n";
 
     ActionList AllActions = Action::getAllPossibleActions();
-    EnableStatistics(false /*we don't want to print statistics*/);
 
     errs() << "Wazuhl has " << AllActions.size() << " actions to choose from\n";
 
@@ -43,31 +43,20 @@ namespace wazuhl {
       // this part here is temporal, until actual
       // decision-making mechanism is introduced
       const Action &chosen = random::pickOutOf(AllActions);
-      auto *Pass = chosen.takeAction();
-      if (!Pass) break; // terminal action has been met
+      OptimizationEnv.takeAction(chosen);
+      if (OptimizationEnv.isInTerminalState()) break; // terminal action has been met
 
       errs() << "Wazuhl is running " << chosen.getName() << "\n";
-
-      PreservedAnalyses PassPA = Pass->run(IR, AM);
-
       errs() << "Pass had produced " << numberOfNonNullStatistics() <<
         " non-null statistic values\n";
 
-      // Update the analysis manager as each pass runs and potentially
-      // invalidates analyses.
-      AM.invalidate(IR, PassPA);
-
-      // Finally, intersect the preserved analyses to compute the aggregate
-      // preserved set for this pass manager.
-      PA.intersect(std::move(PassPA));
-
-      auto features = AM.getResult<ModuleFeatureCollector>(IR);
+      auto features = OptimizationEnv.getState();
       llvm::errs() << "Features: \n";
       for (auto value : features) errs() << value << ", ";
       llvm::errs() << "\n\n";
     }
 
-    return PA;
+    return OptimizationEnv.getPreservedAnalyses();
   }
 }
 }

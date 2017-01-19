@@ -12,6 +12,7 @@ add_definitions(
 add_llvm_library(LLVMWazuhl
   Action.cpp
   DQN.cpp
+  Environment.cpp
   FeatureCollector.cpp
   Manager.cpp
   Random.cpp
