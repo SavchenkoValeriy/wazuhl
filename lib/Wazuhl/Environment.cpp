@@ -4,7 +4,7 @@ using namespace llvm;
 
 namespace {
   template <class PassT>
-  void runPass(PassT &Pass, Module &IR,
+  inline void runPass(PassT &Pass, Module &IR,
                             ModuleAnalysisManager &AM,
                             PreservedAnalyses &PA) {
       PreservedAnalyses PassPA = Pass->run(IR, AM);
