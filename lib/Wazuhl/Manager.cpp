@@ -1,6 +1,7 @@
 #include "llvm/Wazuhl/Manager.h"
 #include "llvm/Wazuhl/Action.h"
 #include "llvm/Wazuhl/Config.h"
+#include "llvm/Wazuhl/DQN.h"
 #include "llvm/Wazuhl/Environment.h"
 #include "llvm/Wazuhl/FeatureCollector.h"
 #include "llvm/Wazuhl/Random.h"
@@ -41,20 +42,23 @@ namespace wazuhl {
     errs() << "Wazuhl has " << AllActions.size() << " actions to choose from\n";
     errs() << "Wazuhl's NN model is stored in " << config::getCaffeModelPath() << "\n";
 
+    DQN Q;
+
     for (auto i = 1; i <= 15; ++i) {
       // this part here is temporal, until actual
       // decision-making mechanism is introduced
-      const Action &chosen = random::pickOutOf(AllActions);
-      OptimizationEnv.takeAction(chosen);
+      const Action &A = random::pickOutOf(AllActions);
+      OptimizationEnv.takeAction(A);
       if (OptimizationEnv.isInTerminalState()) break; // terminal action has been met
 
-      errs() << "Wazuhl is running " << chosen.getName() << "\n";
+      errs() << "Wazuhl is running " << A.getName() << "\n";
       errs() << "Pass had produced " << numberOfNonNullStatistics() <<
         " non-null statistic values\n";
 
-      auto features = OptimizationEnv.getState();
+      auto S = OptimizationEnv.getState();
+      Q(S, A) = 15.5;
       llvm::errs() << "Features: \n";
-      for (auto value : features) errs() << value << ", ";
+      for (auto value : S) errs() << value << ", ";
       llvm::errs() << "\n\n";
     }
 

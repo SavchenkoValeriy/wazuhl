@@ -1,26 +1,27 @@
 #ifndef LLVM_WAZUHL_DQN_H
 #define LLVM_WAZUHL_DQN_H
 
+#include "llvm/Wazuhl/Action.h"
+#include "llvm/Wazuhl/FeatureCollector.h"
+#include "llvm/Wazuhl/Q.h"
 #include <memory>
+#include <vector>
 
 namespace llvm {
 namespace wazuhl {
 
-  class DQNImpl;
-
-  class DQN {
+  class DQNCore {
   public:
-    // TODO: Change to true values
-    using State = int;
-    using Action = int;
+    using State = FeatureVector;
+    using Action = Action;
     using Result = double;
+    using ResultsVector = std::vector<Result>;
 
-    Result &operator() (const State &S, const Action &A);
-    Result operator() (const State &S, const Action &A) const;
-
-  private:
-    std::unique_ptr<DQNImpl> pImpl;
+    ResultsVector calculate(const State &S) const;
+    void update(const State &S, const Action &A, Result value);
   };
+
+  using DQN = rl::Q<DQNCore>;
 }
 }
 

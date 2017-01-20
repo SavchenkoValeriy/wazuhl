@@ -19,11 +19,13 @@ namespace wazuhl {
   class Action {
   private:
     using PassConstructorT = std::function<ActionResult *()>;
-    std::string Name;
-    PassConstructorT PassConstructor;
+
+    const std::string Name;
+    const PassConstructorT PassConstructor;
+    const unsigned Index;
   public:
-    Action(const std::string &name, PassConstructorT ctor) :
-      Name(name), PassConstructor(ctor) {}
+    Action(const std::string &name, PassConstructorT ctor, unsigned index) :
+      Name(name), PassConstructor(ctor), Index(index) {}
 
     ActionResult *takeAction() const {
       return PassConstructor();
@@ -33,7 +35,12 @@ namespace wazuhl {
       return Name;
     }
 
+    unsigned getIndex() const {
+      return Index;
+    }
+
     static ActionList getAllPossibleActions();
+    static Action getActionByIndex(unsigned Index);
     static const Action &getActionByName(const StringRef);
   };
 }

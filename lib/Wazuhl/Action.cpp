@@ -142,6 +142,7 @@ namespace {
   }
 
   ActionList createAllPossibleActions() {
+    unsigned CurrentIndex = 0;
     ActionList EverySinglePossiblePass {
 #define ANALYSIS_TO_PASS(CTR, IR_TYPE)                                         \
       RequireAnalysisPass                                                      \
@@ -154,7 +155,8 @@ namespace {
                                                 PreservedAnalyses,             \
                                                 AnalysisManager<Module>>;      \
           return new WrapperType(CTR);                                         \
-        }                                                                      \
+        },                                                                     \
+        CurrentIndex++                                                         \
       },
 #define MODULE_PASS(NAME, CREATE_PASS)                                         \
       MODULE_PASS_OR_ANALYSIS(NAME, CREATE_PASS)
@@ -185,7 +187,7 @@ namespace {
 #undef CGSCC_PASS_OR_ANALYSIS
 #undef FUNCTION_PASS_OR_ANALYSIS
 #undef LOOP_PASS_OR_ANALYSIS
-      {"terminal", [] { return nullptr; }} /// this is a terminal action
+      {"terminal", [] { return nullptr; }, CurrentIndex++} /// this is a terminal action
     };
     auto FilteredListOfActions =
       make_filter_range(EverySinglePossiblePass,
