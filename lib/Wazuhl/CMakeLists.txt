@@ -11,11 +11,13 @@ add_definitions(
 
 add_llvm_library(LLVMWazuhl
   Action.cpp
+  Config.cpp
   DQN.cpp
   Environment.cpp
   FeatureCollector.cpp
   Manager.cpp
   Random.cpp
+
   LINK_LIBS
   ${Caffe_LIBRARIES}
   )

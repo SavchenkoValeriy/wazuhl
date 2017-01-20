@@ -5,8 +5,8 @@ using namespace llvm;
 namespace {
   template <class PassT>
   inline void runPass(PassT &Pass, Module &IR,
-                            ModuleAnalysisManager &AM,
-                            PreservedAnalyses &PA) {
+                      ModuleAnalysisManager &AM,
+                      PreservedAnalyses &PA) {
       PreservedAnalyses PassPA = Pass->run(IR, AM);
 
       // Update the analysis manager as each pass runs and potentially

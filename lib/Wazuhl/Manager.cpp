@@ -1,5 +1,6 @@
 #include "llvm/Wazuhl/Manager.h"
 #include "llvm/Wazuhl/Action.h"
+#include "llvm/Wazuhl/Config.h"
 #include "llvm/Wazuhl/Environment.h"
 #include "llvm/Wazuhl/FeatureCollector.h"
 #include "llvm/Wazuhl/Random.h"
@@ -38,6 +39,7 @@ namespace wazuhl {
     ActionList AllActions = Action::getAllPossibleActions();
 
     errs() << "Wazuhl has " << AllActions.size() << " actions to choose from\n";
+    errs() << "Wazuhl's NN model is stored in " << config::getCaffeModelPath() << "\n";
 
     for (auto i = 1; i <= 15; ++i) {
       // this part here is temporal, until actual
