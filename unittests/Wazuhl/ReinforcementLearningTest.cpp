@@ -1,3 +1,4 @@
+#include "llvm/Wazuhl/Q.h"
 #include "llvm/Wazuhl/ReinforcementLearning.h"
 #include "llvm/Support/raw_ostream.h"
 #include "gtest/gtest.h"
@@ -17,6 +18,13 @@ public:
     State (State &&) = default;
     State &operator=(const State &) = default;
     int position = 0;
+    static std::vector<State> getAllStates() {
+      std::vector<State> Result;
+      for (int i = -1; i < NumberOfStates - 1; ++i) {
+        Result.emplace_back(i);
+      }
+      return Result;
+    }
   };
 
   class Action {
@@ -24,10 +32,19 @@ public:
     enum Direction { Left, Right };
     Direction direction;
 
+    unsigned getIndex() const {
+      return direction;
+    }
+
     using AllDirections = Action[2];
     static const AllDirections &getAllActions() {
       return all;
     }
+
+    static Action getActionByIndex(unsigned Index) {
+      return all[Index];
+    }
+
   private:
     static AllDirections all;
   };
@@ -65,63 +82,37 @@ public:
   };
 };
 
-class Q {
+class QCore {
 public:
-  using State  = TestProblem::State;
-  using Action = TestProblem::Action;
-  using Result = double;
+  using State         = TestProblem::State;
+  using Action        = TestProblem::Action;
+  using Result        = double;
+  using ResultsVector = Result (&)[2];
 
-  class CurriedQ {
-  public:
-    using State  = Q::State;
-    using Action = Q::Action;
-    using Result = Q::Result;
-
-    CurriedQ(Result (&values)[2]) : values(values) {}
-    Result &operator() (const Action &A) {
-      return values[index(A)];
-    }
-    Result operator() (const Action &A) const {
-      return values[index(A)];
-    }
-  private:
-    int index(const Action &A) const {
-      return A.direction == Action::Left ? 1 : 0;
-    }
-
-    Result (&values)[2];
-
-    friend Action rl::argmax<CurriedQ>(const CurriedQ &);
-    friend Result rl::max<CurriedQ>(const CurriedQ &);
-  };
-
-  CurriedQ operator() (const State &S) {
-    return {values[index(S)]};
+  ResultsVector calculate(const State &S) const {
+    return values[index(S)];
   }
-  const CurriedQ operator() (const State &S) const {
-    return {values[index(S)]};
-  }
-  Result &operator() (const State &S, const Action &A) {
-    return (*this)(S)(A);
-  }
-  Result operator() (const State &S, const Action &A) const {
-    return (*this)(S)(A);
-  }
+
   void update(const State &S, const Action &A, Result value) {
-    (*this)(S, A) = value;
+    values[index(S)][index(A)] = value;
   }
 
 private:
   int index(const State &S) const {
     return S.position + 1;
   }
+  int index(const Action &A) const {
+    return A.getIndex();
+  }
 
   mutable Result values[NumberOfStates][2] = { {0} };
-  friend raw_ostream &operator<< (raw_ostream &, const Q &);
+  friend raw_ostream &operator<< (raw_ostream &, const QCore &);
   FRIEND_TEST(ReinforcementLearning, QLearning);
 };
 
-raw_ostream &operator<< (raw_ostream &out, const Q &function) {
+using Q = rl::Q<QCore>;
+
+raw_ostream &operator<< (raw_ostream &out, const QCore &function) {
   auto printAction = [&](const StringRef name, int offset) {
     out << name << ": ";
     for (int i = 0; i < NumberOfStates - 1; ++i) {
@@ -135,22 +126,14 @@ raw_ostream &operator<< (raw_ostream &out, const Q &function) {
   return out;
 }
 
-template <>
-Q::CurriedQ::Action rl::argmax(const Q::CurriedQ &F) {
-  return {F.values[0] > F.values[1] ? Q::Action::Right : Q::Action::Left};
-}
-
-template <>
-Q::CurriedQ::Result rl::max(const Q::CurriedQ &F) {
-  return *std::max_element(std::begin(F.values), std::end(F.values));
-}
-
 TestProblem::Action::AllDirections
 TestProblem::Action::all = { { TestProblem::Action::Left },
                              { TestProblem::Action::Right } };
 
 TEST(ReinforcementLearning, QLearning) {
   TestProblem::Environment env;
+  using State = TestProblem::State;
+  using Action = TestProblem::Action;
   Q function;
   rl::policies::EpsilonGreedy<Q> policy{0.7, function};
   rl::QLearning<TestProblem, TestProblem::Environment, Q, decltype(policy)>
@@ -161,12 +144,14 @@ TEST(ReinforcementLearning, QLearning) {
     TotalReward += env.getReward();
     env.reset();
   }
-  constexpr int right = 0, left = 1;
-  for (auto Q_s : function.values) {
-    if (Q_s[right] == 0) {
-      EXPECT_EQ(Q_s[right], Q_s[left]);
+  const Action Right{Action::Right}, Left{Action::Left};
+  for (auto S : State::getAllStates()) {
+    Q::Result RightValue = function(S, Right),
+      LeftValue = function(S, Left);
+    if (RightValue == 0) {
+      EXPECT_EQ(RightValue, LeftValue);
     } else {
-      EXPECT_GT(Q_s[right], Q_s[left]);
+      EXPECT_GT(RightValue, LeftValue);
     }
   }
 }

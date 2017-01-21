@@ -218,5 +218,9 @@ namespace wazuhl {
     static ActionMap Actions = createActionMap();
     return *Actions[Name];
   }
+
+  Action Action::getActionByIndex(unsigned Index) {
+    return AllPossibleActions[Index];
+  }
 }
 }

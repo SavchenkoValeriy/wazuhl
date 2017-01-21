@@ -1,6 +1,9 @@
 #ifndef LLVM_WAZUHL_Q_H
 #define LLVM_WAZUHL_Q_H
 
+#include <algorithm>
+#include <utility>
+
 namespace llvm {
 namespace wazuhl {
 namespace rl {
@@ -8,10 +11,11 @@ namespace rl {
   template <class QCore>
   class Q {
   public:
-    using State         = typename QCore::State;
-    using Action        = typename QCore::Action;
-    using Result        = typename QCore::Result;
-    using ResultsVector = typename QCore::ResultsVector;
+    using State           = typename QCore::State;
+    using Action          = typename QCore::Action;
+    using Result          = typename QCore::Result;
+    using ResultsVector   = typename QCore::ResultsVector;
+    using ActionValuePair = typename std::pair<Action, Result>;
 
     class CurriedQ;
 
@@ -56,6 +60,16 @@ namespace rl {
         unsigned ActionIndex{A.getIndex()};
         return {Original, S, A, Results[ActionIndex]};
       }
+
+      ActionValuePair
+      max_pair() const {
+        auto Begin = std::begin(Results),
+             End   = std::end(Results);
+        auto MaxIterator = std::max_element(Begin, End);
+        unsigned Index = MaxIterator - Begin;
+        Action A = Action::getActionByIndex(Index);
+        return {A, *MaxIterator};
+      }
     private:
       CurriedQ(QCore *original, const State &s, ResultsVector &&results) :
         Original(original), S(s), Results(results) {}
@@ -94,9 +108,20 @@ namespace rl {
     Q<QCore> &operator=(Q<QCore> &&) = default;
 
   private:
-    QCore Original;
+    mutable QCore Original;
 };
 
+  template <class QCore>
+  using QS = typename Q<QCore>::CurriedQ;
+
+  template <class Q>
+  typename Q::Action argmax(const Q &Function) {
+    return Function.max_pair().first;
+  }
+  template <class Q>
+  typename Q::Result max(const Q &Function) {
+    return Function.max_pair().second;
+  }
 }
 }
 }

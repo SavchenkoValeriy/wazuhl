@@ -6,11 +6,6 @@
 namespace llvm {
 namespace wazuhl {
 namespace rl {
-  template <class Function>
-  typename Function::Action argmax(const Function &);
-  template <class Function>
-  typename Function::Result max(const Function &);
-
   template <class ProblemT, class EnvironmentT, class QType, class PolicyT>
   class QLearning {
   public:
@@ -29,7 +24,7 @@ namespace rl {
         auto R = Environment.getReward();
         auto oldQValue = Q(S, A);
         auto newQValue = oldQValue + alpha * (R + gamma * max(Q(newS)) - oldQValue);
-        Q.update(S, A, newQValue);
+        Q(S, A) = newQValue;
         S = newS;
       }
     }
