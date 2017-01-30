@@ -7,6 +7,7 @@ include_directories(
 
 add_definitions(
   ${Caffe_DEFINITIONS}
+  -DGOOGLE_PROTOBUF_NO_RTTI
   )
 
 add_llvm_library(LLVMWazuhl
@@ -23,6 +24,8 @@ add_llvm_library(LLVMWazuhl
   )
 
 install(
-  FILES model.prototxt
+  FILES
+  model.prototxt
+  solver.prototxt
   DESTINATION wazuhl
   )

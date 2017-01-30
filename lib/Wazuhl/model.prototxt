@@ -1,10 +1,35 @@
 name: "wazuhl_DQN"
-name: "CaffeNet"
 layer {
-  name: "data"
-  type: "Input"
+  name: "experience_replay_state"
+  type: "MemoryData"
   top: "data"
-  input_param { shape: { dim: 65 } }
+  top: "redundant1"
+  include {
+    phase: TRAIN
+  }
+  memory_data_param 
+  {
+    batch_size: 32 
+    channels: 1 
+    height: 1
+    width: 65
+  }
+}
+layer {
+  name: "live_input"
+  type: "MemoryData"
+  top: "data"
+  top: "redundant2"
+  include {
+    phase: TEST
+  }
+  memory_data_param 
+  {
+    batch_size: 1
+    channels: 1 
+    height: 1
+    width: 65
+  }
 }
 layer {
   name: "ip1"
@@ -31,8 +56,28 @@ layer {
   top: "activation"
 }
 layer {
+  name: "experience_replay_action"
+  type: "MemoryData"
+  top: "experience_replay_action"
+  top: "redundant3"
+  include {
+    phase: TRAIN
+  }
+  memory_data_param 
+  {
+    batch_size: 32 
+    channels: 1 
+    height: 1
+    width: 120
+  }
+}
+layer {
   name: "loss"
   type: "EuclideanLoss"
   bottom: "activation"
+  bottom: "experience_replay_action"
   top: "loss"
+  include {
+    phase: TRAIN
+  }
 }

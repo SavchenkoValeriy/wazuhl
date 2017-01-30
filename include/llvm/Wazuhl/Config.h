@@ -8,6 +8,7 @@ namespace wazuhl {
 namespace config {
 
   StringRef getCaffeModelPath();
+  StringRef getCaffeSolverPath();
 
 }
 }

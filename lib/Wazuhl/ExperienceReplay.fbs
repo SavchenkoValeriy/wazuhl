@@ -1,0 +1,16 @@
+namespace llvm.wazuhl;
+
+table FeatureVector {
+  Features : [double];
+}
+
+table StateValuePair {
+  State : FeatureVector;
+  Q : double;
+}
+
+table ExperienceReplay {
+  Experience : [StateValuePair];
+}
+
+root_type ExperienceReplay;

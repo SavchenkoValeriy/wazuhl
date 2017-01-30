@@ -10,6 +10,12 @@ namespace {
     llvm::sys::path::append(Result, Appendicies...);
     return Result;
   }
+
+  using SmallString = llvm::SmallString<120>;
+
+  SmallString RootLLVMDirectory = llvm::StringRef{LLVM_PREFIX};
+  SmallString WazuhlConfigs =
+    appendPath(RootLLVMDirectory, "wazuhl");
 }
 
 namespace llvm {
@@ -17,12 +23,16 @@ namespace wazuhl {
 namespace config {
 
   StringRef getCaffeModelPath() {
-    static SmallString<120> RootLLVMDirectory = StringRef{LLVM_PREFIX};
     static SmallString<120> CaffeModelPath =
-      appendPath(RootLLVMDirectory, "wazuhl", "model.prototxt");
+      appendPath(WazuhlConfigs, "model.prototxt");
     return CaffeModelPath;
   }
 
+  StringRef getCaffeSolverPath() {
+    static SmallString<120> CaffeSolverPath =
+      appendPath(WazuhlConfigs, "solver.prototxt");
+    return CaffeSolverPath;
+  }
 }
 }
 }
