@@ -33,6 +33,10 @@ namespace config {
       appendPath(WazuhlConfigs, "solver.prototxt");
     return CaffeSolverPath;
   }
+
+  StringRef getWazuhlConfigPath() {
+    return WazuhlConfigs;
+  }
 }
 }
 }

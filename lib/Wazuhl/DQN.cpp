@@ -1,8 +1,26 @@
 #include "llvm/Wazuhl/DQN.h"
 #include "llvm/Wazuhl/Config.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <caffe/caffe.hpp>
+#include <unistd.h>
+
+namespace {
+  class GoToDirectory {
+  public:
+    GoToDirectory(llvm::StringRef path) {
+      llvm::sys::fs::current_path(ToReturn);
+      chdir(path.str().c_str());
+    }
+    ~GoToDirectory() {
+      chdir(ToReturn.c_str());
+    }
+  private:
+    llvm::SmallString<120> ToReturn;
+  };
+
+}
 
 namespace llvm {
 namespace wazuhl {
@@ -49,7 +67,7 @@ namespace wazuhl {
     pImpl->update(S, A, value);
   }
 
-  DQNCore::DQNCore()  = default;
+  DQNCore::DQNCore() : pImpl(llvm::make_unique<DQNCoreImpl>()) {}
   DQNCore::~DQNCore() = default;
 
   ResultsVector DQNCoreImpl::calculate(const State &S) const {
@@ -74,11 +92,17 @@ namespace wazuhl {
 
   void DQNCoreImpl::initialize() {
     caffe::Caffe::set_mode(caffe::Caffe::CPU);
-    caffe::Net<double> NN{config::getCaffeModelPath(), caffe::TRAIN};
+    initializeSolver();
   }
 
   void DQNCoreImpl::initializeSolver() {
     caffe::SolverParameter SolverParam;
+
+    // caffe looks for 'net' from solver.prototxt not relatively to itself
+    // but to a current directory, that's why
+    // we're temporaly going to wazuhl's config directory
+    GoToDirectory x{llvm::wazuhl::config::getWazuhlConfigPath()};
+
     caffe::ReadProtoFromTextFileOrDie(config::getCaffeSolverPath(),
                                       &SolverParam);
 
