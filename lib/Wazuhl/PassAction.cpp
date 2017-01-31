@@ -1,4 +1,4 @@
-#include "llvm/Wazuhl/Action.h"
+#include "llvm/Wazuhl/PassAction.h"
 
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/AliasAnalysisEvaluator.h"
@@ -131,7 +131,7 @@ namespace {
   const std::string uselessPrefixes[] = {"print", "pgo", "dot", "view"};
   const std::string uselessSuffixes[] = {"profile", "import"};
 
-  inline bool isActionUsefull(const Action& a) {
+  inline bool isActionUsefull(const PassAction& a) {
     auto &ActionName = a.getName();
     return llvm::none_of(uselessPrefixes, [&ActionName](const std::string &x) {
         return ActionName.startswith(x);
@@ -141,9 +141,9 @@ namespace {
       });
   }
 
-  ActionList createAllPossibleActions() {
+  PassActionList createAllPossibleActions() {
     unsigned CurrentIndex = 0;
-    ActionList EverySinglePossiblePass {
+    PassActionList EverySinglePossiblePass {
 #define ANALYSIS_TO_PASS(CTR, IR_TYPE)                                         \
       RequireAnalysisPass                                                      \
           <std::remove_reference<decltype(CTR)>::type, IR_TYPE>()
@@ -191,18 +191,18 @@ namespace {
     };
     auto FilteredListOfActions =
       make_filter_range(EverySinglePossiblePass,
-                        [] (const Action &a) {
+                        [] (const PassAction &a) {
                           return isActionUsefull(a);
                         });
     return {FilteredListOfActions.begin(), FilteredListOfActions.end()};
   }
 
-  ActionList AllPossibleActions = createAllPossibleActions();
+  PassActionList AllPossibleActions = createAllPossibleActions();
 
-  using ActionMap = StringMap<const Action *>;
-  ActionMap createActionMap() {
-    ActionMap result{};
-    for (const Action &x : AllPossibleActions) {
+  using PassActionMap = StringMap<const PassAction *>;
+  PassActionMap createActionMap() {
+    PassActionMap result{};
+    for (const PassAction &x : AllPossibleActions) {
       result[x.getName()] = &x;
     }
     return result;
@@ -211,15 +211,15 @@ namespace {
 
 namespace llvm {
 namespace wazuhl {
-  ActionList Action::getAllPossibleActions() {
+  PassActionList PassAction::getAllPossibleActions() {
     return AllPossibleActions;
   }
-  const Action &Action::getActionByName(const llvm::StringRef Name) {
-    static ActionMap Actions = createActionMap();
+  const PassAction &PassAction::getActionByName(const llvm::StringRef Name) {
+    static PassActionMap Actions = createActionMap();
     return *Actions[Name];
   }
 
-  Action Action::getActionByIndex(unsigned Index) {
+  PassAction PassAction::getActionByIndex(unsigned Index) {
     return AllPossibleActions[Index];
   }
 }

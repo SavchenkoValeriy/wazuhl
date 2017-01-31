@@ -8,20 +8,25 @@ include_directories(
 add_definitions(
   ${Caffe_DEFINITIONS}
   -DGOOGLE_PROTOBUF_NO_RTTI
+  -DBOOST_NO_EXCEPTIONS
+  -DBOOST_NO_RTTI
   )
 
 add_llvm_library(LLVMWazuhl
-  Action.cpp
   Config.cpp
   DQN.cpp
   Environment.cpp
   FeatureCollector.cpp
   Manager.cpp
+  PassAction.cpp
   Random.cpp
 
   LINK_LIBS
   ${Caffe_LIBRARIES}
   )
+
+set_property(TARGET LLVMWazuhl APPEND_STRING PROPERTY
+  COMPILE_FLAGS " -fexceptions")
 
 install(
   FILES

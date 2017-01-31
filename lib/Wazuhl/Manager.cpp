@@ -1,5 +1,5 @@
 #include "llvm/Wazuhl/Manager.h"
-#include "llvm/Wazuhl/Action.h"
+#include "llvm/Wazuhl/PassAction.h"
 #include "llvm/Wazuhl/Config.h"
 #include "llvm/Wazuhl/DQN.h"
 #include "llvm/Wazuhl/Environment.h"
@@ -37,7 +37,7 @@ namespace wazuhl {
     if (DebugLogging)
       dbgs() << "Starting Wazuhl optimization process.\n";
 
-    ActionList AllActions = Action::getAllPossibleActions();
+    PassActionList AllActions = PassAction::getAllPossibleActions();
 
     errs() << "Wazuhl has " << AllActions.size() << " actions to choose from\n";
     errs() << "Wazuhl's NN model is stored in " << config::getCaffeModelPath() << "\n";
@@ -47,7 +47,7 @@ namespace wazuhl {
     for (auto i = 1; i <= 15; ++i) {
       // this part here is temporal, until actual
       // decision-making mechanism is introduced
-      const Action &A = random::pickOutOf(AllActions);
+      const PassAction &A = random::pickOutOf(AllActions);
       OptimizationEnv.takeAction(A);
       if (OptimizationEnv.isInTerminalState()) break; // terminal action has been met
 

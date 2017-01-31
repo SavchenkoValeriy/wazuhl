@@ -2,7 +2,6 @@
 #define LLVM_WAZUHL_MANAGER_H
 
 #include "llvm/IR/PassManager.h"
-#include "llvm/Wazuhl/Action.h"
 
 namespace llvm {
 

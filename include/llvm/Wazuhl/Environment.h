@@ -1,7 +1,7 @@
 #ifndef LLVM_WAZUHL_ENVIRONMENT_H
 #define LLVM_WAZUHL_ENVIRONMENT_H
 
-#include "llvm/Wazuhl/Action.h"
+#include "llvm/Wazuhl/PassAction.h"
 #include "llvm/Wazuhl/FeatureCollector.h"
 
 namespace llvm {
@@ -10,7 +10,7 @@ namespace wazuhl {
   class Environment {
   public:
     using State = FeatureVector;
-    using Action = Action;
+    using Action = PassAction;
 
     Environment(Module &IR, ModuleAnalysisManager &AM);
 

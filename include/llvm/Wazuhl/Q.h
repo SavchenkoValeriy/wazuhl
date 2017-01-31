@@ -21,8 +21,6 @@ namespace rl {
 
     class QValue {
     public:
-      using Result = Result;
-
       operator Result () {
         return Value;
       }
@@ -47,10 +45,6 @@ namespace rl {
 
     class CurriedQ {
     public:
-      using State  = State;
-      using Action = Action;
-      using Result = Result;
-
       QValue operator() (const Action &A) {
         unsigned ActionIndex{A.getIndex()};
         return {Original, S, A, Results[ActionIndex]};
