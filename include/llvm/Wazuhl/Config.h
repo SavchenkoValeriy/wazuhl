@@ -10,7 +10,7 @@ namespace config {
   StringRef getCaffeModelPath();
   StringRef getCaffeSolverPath();
   StringRef getWazuhlConfigPath();
-
+  StringRef getTrainedNetFile();
 }
 }
 }

@@ -37,6 +37,12 @@ namespace config {
   StringRef getWazuhlConfigPath() {
     return WazuhlConfigs;
   }
+
+  StringRef getTrainedNetFile() {
+    static SmallString<120> TrainedNet =
+      appendPath(WazuhlConfigs, "trained.caffemodel");
+    return TrainedNet;
+  }
 }
 }
 }

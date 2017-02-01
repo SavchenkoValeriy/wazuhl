@@ -38,15 +38,22 @@ namespace wazuhl {
     void addToExperience(const State &S,
                          const Action &A, Result value);
     void experienceUpdate();
+
     void initialize();
     void initializeSolver();
     void initializeNets();
+    void loadTrainedNet();
 
-    using Net = std::unique_ptr<caffe::Net<Result> >;
+    using Net = caffe::Net<Result>;
+    using NetU = std::unique_ptr<Net>;
+    // solver stores boost::shared_ptr,
+    // and it's not convertible to std::shared_ptr
+    using NetS = boost::shared_ptr<Net>;
     using SolverTy = std::unique_ptr<caffe::Solver<Result> >;
 
-    Net LearningNet;
-    Net CalculatingNet;
+    // learning net is shared with the solver
+    NetS LearningNet;
+    NetU CalculatingNet;
     SolverTy Solver;
   };
 
@@ -93,6 +100,7 @@ namespace wazuhl {
   void DQNCoreImpl::initialize() {
     caffe::Caffe::set_mode(caffe::Caffe::CPU);
     initializeSolver();
+    initializeNets();
   }
 
   void DQNCoreImpl::initializeSolver() {
@@ -101,12 +109,26 @@ namespace wazuhl {
     // caffe looks for 'net' from solver.prototxt not relatively to itself
     // but to a current directory, that's why
     // we're temporaly going to wazuhl's config directory
-    GoToDirectory x{llvm::wazuhl::config::getWazuhlConfigPath()};
+    GoToDirectory x{config::getWazuhlConfigPath()};
 
     caffe::ReadProtoFromTextFileOrDie(config::getCaffeSolverPath(),
                                       &SolverParam);
 
     Solver.reset(caffe::SolverRegistry<Result>::CreateSolver(SolverParam));
+  }
+
+  void DQNCoreImpl::initializeNets() {
+    LearningNet = Solver->net();
+    loadTrainedNet();
+    CalculatingNet = llvm::make_unique<Net>(config::getCaffeModelPath(),
+                                            caffe::TEST);
+    CalculatingNet->ShareTrainedLayersWith(LearningNet.get());
+  }
+
+  void DQNCoreImpl::loadTrainedNet() {
+    auto SavedNet = config::getTrainedNetFile();
+    if (sys::fs::exists(SavedNet))
+      LearningNet->CopyTrainedLayersFrom(SavedNet);
   }
 }
 }
