@@ -4,6 +4,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <caffe/caffe.hpp>
+#include <caffe/layers/memory_data_layer.hpp>
 #include <unistd.h>
 
 namespace {
@@ -11,15 +12,26 @@ namespace {
   public:
     GoToDirectory(llvm::StringRef path) {
       llvm::sys::fs::current_path(ToReturn);
-      chdir(path.str().c_str());
+      cd(path);
     }
     ~GoToDirectory() {
-      chdir(ToReturn.c_str());
+      cd(ToReturn);
     }
   private:
+    void cd(llvm::StringRef path) {
+      auto ret = chdir(path.str().c_str());
+      if (ret != 0)
+        llvm_unreachable("Moving to a non-existent directory");
+    }
     llvm::SmallString<120> ToReturn;
   };
 
+  template< class T, class U >
+  boost::shared_ptr<T> pointer_cast(const boost::shared_ptr<U>& r) noexcept
+  {
+    auto p = (typename boost::shared_ptr<T>::element_type*)(r.get());
+    return boost::shared_ptr<T>(r, p);
+  }
 }
 
 namespace llvm {
@@ -28,6 +40,11 @@ namespace wazuhl {
   using Result        = DQNCore::Result;
   using State         = DQNCore::State;
   using ResultsVector = DQNCore::ResultsVector;
+
+  // TODO: Make a unified place for this
+  constexpr unsigned MinibatchSize = 32;
+  llvm::SmallVector<Result, MinibatchSize> TrainDummy(MinibatchSize);
+  llvm::SmallVector<Result, 1> TestDummy(1);
 
   class DQNCoreImpl {
   public:
@@ -40,12 +57,14 @@ namespace wazuhl {
                          const Action &A, Result value);
     void experienceUpdate();
 
-    void initialize();
-    void initializeSolver();
-    void initializeNets();
+    inline void initialize();
+    inline void initializeSolver();
+    inline void initializeNets();
+    inline void initializeInputs();
+    inline void initializeOutputs();
 
-    void loadTrainedNet();
-    void saveTrainedNet();
+    inline void loadTrainedNet();
+    inline void saveTrainedNet();
 
     using Net = caffe::Net<Result>;
     using NetU = std::unique_ptr<Net>;
@@ -53,10 +72,15 @@ namespace wazuhl {
     // and it's not convertible to std::shared_ptr
     using NetS = boost::shared_ptr<Net>;
     using SolverTy = std::unique_ptr<caffe::Solver<Result> >;
+    using InputLayer = caffe::MemoryDataLayer<Result>;
+    using InputLayerS = boost::shared_ptr<InputLayer>;
 
     // learning net is shared with the solver
     NetS LearningNet;
     NetU CalculatingNet;
+    InputLayerS LearningNetInput;
+    InputLayerS LearningNetExpected;
+    InputLayerS CalculatingNetInput;
     SolverTy Solver;
   };
 
@@ -100,13 +124,14 @@ namespace wazuhl {
     //TODO: implement experience replay
   }
 
-  void DQNCoreImpl::initialize() {
+  inline void DQNCoreImpl::initialize() {
     caffe::Caffe::set_mode(caffe::Caffe::CPU);
     initializeSolver();
     initializeNets();
+    initializeInputs();
   }
 
-  void DQNCoreImpl::initializeSolver() {
+  inline void DQNCoreImpl::initializeSolver() {
     caffe::SolverParameter SolverParam;
 
     // caffe looks for 'net' from solver.prototxt not relatively to itself
@@ -120,7 +145,7 @@ namespace wazuhl {
     Solver.reset(caffe::SolverRegistry<Result>::CreateSolver(SolverParam));
   }
 
-  void DQNCoreImpl::initializeNets() {
+  inline void DQNCoreImpl::initializeNets() {
     LearningNet = Solver->net();
     loadTrainedNet();
     CalculatingNet = llvm::make_unique<Net>(config::getCaffeModelPath(),
@@ -128,13 +153,22 @@ namespace wazuhl {
     CalculatingNet->ShareTrainedLayersWith(LearningNet.get());
   }
 
-  void DQNCoreImpl::loadTrainedNet() {
+  inline void DQNCoreImpl::initializeInputs() {
+    CalculatingNetInput = pointer_cast<InputLayer>(
+          CalculatingNet->layer_by_name("live_input"));
+    LearningNetInput = pointer_cast<InputLayer>(
+          LearningNet->layer_by_name("experience_replay_state"));
+    LearningNetExpected = pointer_cast<InputLayer>(
+          LearningNet->layer_by_name("experience_replay_action"));
+  }
+
+  inline void DQNCoreImpl::loadTrainedNet() {
     auto SavedNet = config::getTrainedNetFile();
     if (sys::fs::exists(SavedNet))
       LearningNet->CopyTrainedLayersFrom(SavedNet);
   }
 
-  void DQNCoreImpl::saveTrainedNet() {
+  inline void DQNCoreImpl::saveTrainedNet() {
     caffe::NetParameter net_param;
     LearningNet->ToProto(&net_param, false);
     caffe::WriteProtoToBinaryFile(net_param, config::getTrainedNetFile());
