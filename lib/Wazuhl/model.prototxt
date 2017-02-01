@@ -10,9 +10,9 @@ layer {
   memory_data_param 
   {
     batch_size: 32 
-    channels: 1 
+    channels: 65
     height: 1
-    width: 65
+    width: 1
   }
 }
 layer {
@@ -26,9 +26,9 @@ layer {
   memory_data_param 
   {
     batch_size: 1
-    channels: 1 
+    channels: 65
     height: 1
-    width: 65
+    width: 1
   }
 }
 layer {
@@ -50,7 +50,7 @@ layer {
   top: "bias"
 }
 layer {
-  name: "actiation"
+  name: "activation"
   type: "TanH"
   bottom: "bias"
   top: "activation"
@@ -69,6 +69,23 @@ layer {
     channels: 1 
     height: 1
     width: 120
+  }
+}
+layer {
+  name: "silence_train"
+  type: "Silence"
+  bottom: "redundant1"
+  bottom: "redundant3"
+  include {
+    phase: TRAIN
+  }
+}
+layer {
+  name: "silence_test"
+  type: "Silence"
+  bottom: "redundant2"
+  include {
+    phase: TEST
   }
 }
 layer {
