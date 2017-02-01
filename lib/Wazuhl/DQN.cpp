@@ -32,6 +32,7 @@ namespace wazuhl {
   class DQNCoreImpl {
   public:
     DQNCoreImpl() { initialize(); }
+    ~DQNCoreImpl();
     ResultsVector calculate(const DQN::State &S) const;
     void update(const State &S, const Action &A, Result value);
   private:
@@ -42,7 +43,9 @@ namespace wazuhl {
     void initialize();
     void initializeSolver();
     void initializeNets();
+
     void loadTrainedNet();
+    void saveTrainedNet();
 
     using Net = caffe::Net<Result>;
     using NetU = std::unique_ptr<Net>;
@@ -129,6 +132,16 @@ namespace wazuhl {
     auto SavedNet = config::getTrainedNetFile();
     if (sys::fs::exists(SavedNet))
       LearningNet->CopyTrainedLayersFrom(SavedNet);
+  }
+
+  void DQNCoreImpl::saveTrainedNet() {
+    caffe::NetParameter net_param;
+    LearningNet->ToProto(&net_param, false);
+    caffe::WriteProtoToBinaryFile(net_param, config::getTrainedNetFile());
+  }
+
+  DQNCoreImpl::~DQNCoreImpl() {
+    saveTrainedNet();
   }
 }
 }
