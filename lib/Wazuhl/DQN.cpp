@@ -25,13 +25,6 @@ namespace {
     }
     llvm::SmallString<120> ToReturn;
   };
-
-  template< class T, class U >
-  boost::shared_ptr<T> pointer_cast(const boost::shared_ptr<U>& r) noexcept
-  {
-    auto p = (typename boost::shared_ptr<T>::element_type*)(r.get());
-    return boost::shared_ptr<T>(r, p);
-  }
 }
 
 namespace llvm {
@@ -66,7 +59,9 @@ namespace wazuhl {
     inline void loadTrainedNet();
     inline void saveTrainedNet();
 
+    using Blob = caffe::Blob<Result>;
     using Net = caffe::Net<Result>;
+    using BlobS = boost::shared_ptr<Blob>;
     using NetU = std::unique_ptr<Net>;
     // solver stores boost::shared_ptr,
     // and it's not convertible to std::shared_ptr
@@ -82,6 +77,7 @@ namespace wazuhl {
     InputLayerS LearningNetExpected;
     InputLayerS CalculatingNetInput;
     SolverTy Solver;
+    BlobS Output;
   };
 
 
@@ -91,13 +87,6 @@ namespace wazuhl {
 
   void DQNCore::update(const State &S,
                        const Action &A, Result value) {
-    //    llvm::errs() << "update was called for Action {" <<
-    //      A.getName() << "} and Value{" << value << "}\n";
-    // TODO: implement the following steps
-    // 1. add (S, A, value) to experience replay
-    // 2. randomly pick a minibatch of triplets (S, A, value)
-    //    out of experience replay
-    // 3. do one step of SGD towards the minibatch by L_2 measure
     pImpl->update(S, A, value);
   }
 
@@ -105,12 +94,21 @@ namespace wazuhl {
   DQNCore::~DQNCore() = default;
 
   ResultsVector DQNCoreImpl::calculate(const State &S) const {
+    // caffe requires non-const array for MemoryData
+    State SCopy{S};
+    CalculatingNetInput->Reset(SCopy.data(), TestDummy.data(), 1);
+    CalculatingNet->Forward();
     return { 0 };
   }
 
   void DQNCoreImpl::update(const State &S,
                            const Action &A, Result value) {
+    // TODO: implement the following steps
+    // 1. add (S, A, value) to experience replay
     addToExperience(S, A, value);
+    // 2. randomly pick a minibatch of triplets (S, A, value)
+    //    out of experience replay
+    // 3. do one step of SGD towards the minibatch by L_2 measure
     experienceUpdate();
   }
 
@@ -122,6 +120,7 @@ namespace wazuhl {
 
   void DQNCoreImpl::experienceUpdate() {
     //TODO: implement experience replay
+    // Solver->Step(1);
   }
 
   inline void DQNCoreImpl::initialize() {
@@ -154,12 +153,16 @@ namespace wazuhl {
   }
 
   inline void DQNCoreImpl::initializeInputs() {
-    CalculatingNetInput = pointer_cast<InputLayer>(
+    CalculatingNetInput = boost::static_pointer_cast<InputLayer>(
           CalculatingNet->layer_by_name("live_input"));
-    LearningNetInput = pointer_cast<InputLayer>(
+    LearningNetInput = boost::static_pointer_cast<InputLayer>(
           LearningNet->layer_by_name("experience_replay_state"));
-    LearningNetExpected = pointer_cast<InputLayer>(
+    LearningNetExpected = boost::static_pointer_cast<InputLayer>(
           LearningNet->layer_by_name("experience_replay_action"));
+  }
+
+  inline void DQNCoreImpl::initializeOutputs() {
+    Output = CalculatingNet->blob_by_name("Q_values");
   }
 
   inline void DQNCoreImpl::loadTrainedNet() {

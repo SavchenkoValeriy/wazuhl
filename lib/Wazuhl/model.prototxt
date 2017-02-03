@@ -53,7 +53,7 @@ layer {
   name: "activation"
   type: "TanH"
   bottom: "bias"
-  top: "activation"
+  top: "Q_values"
 }
 layer {
   name: "experience_replay_action"
