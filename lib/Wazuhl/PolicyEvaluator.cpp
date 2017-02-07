@@ -8,16 +8,15 @@ namespace wazuhl {
   void PolicyEvaluator::evaluate() {
     DQN Q;
     rl::policies::Greedy<DQN> policy{Q};
-    rl::NonLearning<Environment, DQN, decltype(policy)>
-      learner{OptimizationEnv, Q, policy};
+    auto learner = rl::createLearner<rl::NonLearning>(OptimizationEnv, Q, policy);
     learner.learn();
   }
 
   void LearningPolicyEvaluator::evaluate() {
     DQN Q;
     rl::policies::EpsilonGreedy<DQN> policy{0.7, Q};
-    rl::QLearning<Environment, DQN, decltype(policy)>
-      learner{OptimizationEnv, Q, policy, 0.1, 0.99};
+    auto learner = rl::createLearner<rl::QLearning>(OptimizationEnv, Q,
+                                                    policy, 0.1, 0.99);
     learner.learn();
   }
 }

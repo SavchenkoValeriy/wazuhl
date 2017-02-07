@@ -56,6 +56,18 @@ namespace rl {
     const PolicyT &Policy;
   };
 
+  template <template <class ...> class Learner,
+            class EnvironmentT,
+            class FunctionT,
+            class PolicyT,
+            class ...Args>
+  Learner<EnvironmentT, FunctionT, PolicyT>
+  createLearner(EnvironmentT &Environment, FunctionT &ValueFunction,
+                const PolicyT &Policy, Args... args) {
+    return Learner<EnvironmentT, FunctionT, PolicyT>{Environment, ValueFunction,
+                                                     Policy, args...};
+  }
+
   namespace policies {
     template <class Function>
     class Greedy {
