@@ -1,5 +1,6 @@
 #include "llvm/Wazuhl/DQN.h"
 #include "llvm/Wazuhl/Config.h"
+#include "llvm/ADT/Sequence.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -59,6 +60,8 @@ namespace wazuhl {
     inline void loadTrainedNet();
     inline void saveTrainedNet();
 
+    inline ResultsVector getResultsVector() const;
+
     using Blob = caffe::Blob<Result>;
     using Net = caffe::Net<Result>;
     using BlobS = boost::shared_ptr<Blob>;
@@ -98,7 +101,7 @@ namespace wazuhl {
     State SCopy{S};
     CalculatingNetInput->Reset(SCopy.data(), TestDummy.data(), 1);
     CalculatingNet->Forward();
-    return { 0 };
+    return getResultsVector();
   }
 
   void DQNCoreImpl::update(const State &S,
@@ -110,6 +113,18 @@ namespace wazuhl {
     //    out of experience replay
     // 3. do one step of SGD towards the minibatch by L_2 measure
     experienceUpdate();
+  }
+
+  inline ResultsVector DQNCoreImpl::getResultsVector() const {
+    static auto NumberOfActions = Action::getAllPossibleActions().size();
+    ResultsVector result(NumberOfActions, 0.0);
+
+    for (auto i : seq<unsigned>(0, NumberOfActions)) {
+      result[i] = Output->data_at(1/* batch-size for CalculatingNet */,
+                                 i, 0, 0);
+    }
+
+    return result;
   }
 
   void DQNCoreImpl::addToExperience(const State &S,
@@ -125,9 +140,11 @@ namespace wazuhl {
 
   inline void DQNCoreImpl::initialize() {
     caffe::Caffe::set_mode(caffe::Caffe::CPU);
+    google::SetStderrLogging( google::NUM_SEVERITIES );
     initializeSolver();
     initializeNets();
     initializeInputs();
+    initializeOutputs();
   }
 
   inline void DQNCoreImpl::initializeSolver() {

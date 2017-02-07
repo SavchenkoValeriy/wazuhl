@@ -91,7 +91,7 @@ layer {
 layer {
   name: "loss"
   type: "EuclideanLoss"
-  bottom: "activation"
+  bottom: "Q_values"
   bottom: "experience_replay_action"
   top: "loss"
   include {
