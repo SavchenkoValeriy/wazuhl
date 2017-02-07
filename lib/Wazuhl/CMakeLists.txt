@@ -19,6 +19,7 @@ add_llvm_library(LLVMWazuhl
   FeatureCollector.cpp
   Manager.cpp
   PassAction.cpp
+  PolicyEvaluator.cpp
   Random.cpp
 
   LINK_LIBS

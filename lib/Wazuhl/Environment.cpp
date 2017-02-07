@@ -23,13 +23,18 @@ namespace llvm {
 namespace wazuhl {
 
   Environment::Environment(Module &IR, ModuleAnalysisManager &AM) :
-    IR(IR), AM(AM), Current(), PA(PreservedAnalyses::all()) {}
+    IR(IR), AM(AM), Current(), PA(PreservedAnalyses::all()) {
+    llvm::errs() << "Wazuhl has " << Action::getAllPossibleActions().size() <<
+                   " actions to choose from\n";
+  }
 
   Environment::State Environment::getState() {
     return Current;
   }
 
   void Environment::takeAction(const Action &A) {
+    llvm::errs() << "Wazuhl is taking action " << A.getName() << "\n";
+
     auto Pass = A.takeAction();
     // if pass to run is not there,
     // it is a terminal action and no passes to be ran

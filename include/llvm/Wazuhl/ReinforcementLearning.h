@@ -6,11 +6,11 @@
 namespace llvm {
 namespace wazuhl {
 namespace rl {
-  template <class ProblemT, class EnvironmentT, class QType, class PolicyT>
+  template <class EnvironmentT, class QType, class PolicyT>
   class QLearning {
   public:
-    using Action = typename ProblemT::Action;
-    using State  = typename ProblemT::State;
+    using Action = typename EnvironmentT::Action;
+    using State  = typename EnvironmentT::State;
     QLearning(EnvironmentT &Environment, QType &Q, const PolicyT &Policy,
               double alpha, double gamma) :
       Environment(Environment), Q(Q), Policy(Policy), alpha(alpha), gamma(gamma) {}
@@ -22,9 +22,7 @@ namespace rl {
         Environment.takeAction(A);
         State newS = Environment.getState();
         auto R = Environment.getReward();
-        auto oldQValue = Q(S, A);
-        auto newQValue = oldQValue + alpha * (R + gamma * max(Q(newS)) - oldQValue);
-        Q(S, A) = newQValue;
+        Q(S, A) = Q(S, A) + alpha * (R + gamma * max(Q(newS)) - Q(S, A));
         S = newS;
       }
     }
@@ -33,6 +31,29 @@ namespace rl {
     QType &Q;
     const PolicyT &Policy;
     double alpha, gamma;
+  };
+
+  template <class EnvironmentT, class QType, class PolicyT>
+  class NonLearning {
+  public:
+    using Action = typename EnvironmentT::Action;
+    using State  = typename EnvironmentT::State;
+    NonLearning(EnvironmentT &Environment, QType &Q, const PolicyT &Policy) :
+      Environment(Environment), Q(Q), Policy(Policy) { }
+
+    void learn() {
+      State S;
+      do {
+        S = Environment.getState();
+        Action A = Policy.pick(S);
+        Environment.takeAction(A);
+      } while (!Environment.isInTerminalState());
+    }
+
+  private:
+    EnvironmentT &Environment;
+    QType &Q;
+    const PolicyT &Policy;
   };
 
   namespace policies {
@@ -58,7 +79,7 @@ namespace rl {
       using State  = typename Function::State;
 
       Action pick(const State &s) const {
-        static const auto &allActions = Action::getAllActions();
+        static const auto &allActions = Action::getAllPossibleActions();
         return random::pickOutOf(allActions);
       }
     };

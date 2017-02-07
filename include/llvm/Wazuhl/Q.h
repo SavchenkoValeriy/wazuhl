@@ -109,11 +109,11 @@ namespace rl {
   using QS = typename Q<QCore>::CurriedQ;
 
   template <class Q>
-  typename Q::Action argmax(const Q &Function) {
+  auto argmax(const Q &Function) -> decltype(Function.max_pair().first) {
     return Function.max_pair().first;
   }
   template <class Q>
-  typename Q::Result max(const Q &Function) {
+  auto max(const Q &Function) -> decltype(Function.max_pair().second) {
     return Function.max_pair().second;
   }
 }

@@ -1,8 +1,8 @@
 #ifndef LLVM_WAZUHL_ENVIRONMENT_H
 #define LLVM_WAZUHL_ENVIRONMENT_H
 
-#include "llvm/Wazuhl/PassAction.h"
 #include "llvm/Wazuhl/FeatureCollector.h"
+#include "llvm/Wazuhl/PassAction.h"
 
 namespace llvm {
 namespace wazuhl {

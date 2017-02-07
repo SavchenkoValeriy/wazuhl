@@ -9,7 +9,7 @@ using namespace wazuhl;
 
 constexpr int NumberOfStates = 12;
 
-class TestProblem {
+class Environment {
 public:
   class State {
   public:
@@ -49,43 +49,40 @@ public:
     static AllDirections all;
   };
 
-  class Environment {
-  public:
-    void reset() {
-      current = def;
+  void reset() {
+    current = def;
+  }
+  bool isInTerminalState() {
+    return current.position == final.position ||
+      current.position < 0;
+  }
+  void takeAction(const Action &A) {
+    if (A.direction == Action::Left) {
+      --current.position;
+    } else {
+      ++current.position;
     }
-    bool isInTerminalState() {
-      return current.position == final.position ||
-        current.position < 0;
-    }
-    void takeAction(const Action &A) {
-      if (A.direction == Action::Left) {
-        --current.position;
-      } else {
-        ++current.position;
-      }
-    }
-    State getState() {
-      return current;
-    }
-    int getReward() {
-      if (current.position < 0)
-        return -10;
-      if (current.position == final.position)
-        return 50;
-      return 0;
-    }
-  private:
-    State def = {3};
-    State current = def;
-    State final = {NumberOfStates - 2};
-  };
+  }
+  State getState() {
+    return current;
+  }
+  int getReward() {
+    if (current.position < 0)
+      return -10;
+    if (current.position == final.position)
+      return 50;
+    return 0;
+  }
+private:
+  State def = {3};
+  State current = def;
+  State final = {NumberOfStates - 2};
 };
 
 class QCore {
 public:
-  using State         = TestProblem::State;
-  using Action        = TestProblem::Action;
+  using State         = Environment::State;
+  using Action        = Environment::Action;
   using Result        = double;
   using ResultsVector = Result (&)[2];
 
@@ -126,17 +123,17 @@ raw_ostream &operator<< (raw_ostream &out, const QCore &function) {
   return out;
 }
 
-TestProblem::Action::AllDirections
-TestProblem::Action::all = { { TestProblem::Action::Left },
-                             { TestProblem::Action::Right } };
+Environment::Action::AllDirections
+Environment::Action::all = { { Environment::Action::Left },
+                             { Environment::Action::Right } };
 
 TEST(ReinforcementLearning, QLearning) {
-  TestProblem::Environment env;
-  using State = TestProblem::State;
-  using Action = TestProblem::Action;
+  Environment env;
+  using State = Environment::State;
+  using Action = Environment::Action;
   Q function;
   rl::policies::EpsilonGreedy<Q> policy{0.7, function};
-  rl::QLearning<TestProblem, TestProblem::Environment, Q, decltype(policy)>
+  rl::QLearning<Environment, Q, decltype(policy)>
     learner{env, function, policy, 1, 0.99};
   double TotalReward = 0;
   for (int i = 0; i < 1000; ++i) {
@@ -159,8 +156,8 @@ TEST(ReinforcementLearning, QLearning) {
 class QMock {
 public:
   using Result = double;
-  using Action = TestProblem::Action;
-  using State = TestProblem::State;
+  using Action = Environment::Action;
+  using State = Environment::State;
   const QMock &operator() (const State &) const {
     return *this;
   }
@@ -182,7 +179,7 @@ using PicksT = SmallVector<int, 2>;
 template <class Policy>
 PicksT getPicksForPolicy(const Policy &policy) {
   PicksT result{ 0, 0 };
-  TestProblem::State S{3};
+  Environment::State S{3};
   for (int i = 0; i < NumberOfIterations; ++i) {
     ++result[policy.pick(S).direction];
   }
