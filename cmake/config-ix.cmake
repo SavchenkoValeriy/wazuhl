@@ -490,6 +490,8 @@ if (LLVM_ENABLE_ZLIB )
   endif()
 endif()
 
+set(LLVM_PREFIX ${CMAKE_INSTALL_PREFIX})
+
 if (LLVM_ENABLE_DOXYGEN)
   message(STATUS "Doxygen enabled.")
   find_package(Doxygen REQUIRED)
