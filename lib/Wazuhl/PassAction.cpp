@@ -128,8 +128,8 @@ using namespace wazuhl;
 namespace {
   // FIXME: this is a hack specifically made for TargetIRAnalysis
   constexpr llvm::TargetMachine *TM = nullptr;
-  const std::string uselessPrefixes[] = {"print", "pgo", "dot", "view"};
-  const std::string uselessSuffixes[] = {"profile", "import"};
+  const std::string uselessPrefixes[] = {"profile", "print", "pgo", "dot", "view"};
+  const std::string uselessSuffixes[] = {"profile", "profiling", "prof", "import", "consthoist", "loweratomic", "unreachableblockelim", "internalize"};
 
   inline bool isActionUsefull(const PassAction& a) {
     auto &ActionName = a.getName();

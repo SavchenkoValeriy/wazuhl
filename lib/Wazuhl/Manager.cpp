@@ -3,6 +3,7 @@
 #include "llvm/Wazuhl/FeatureCollector.h"
 #include "llvm/Wazuhl/PolicyEvaluator.h"
 #include "llvm/ADT/Statistic.h"
+#include <numeric>
 
 namespace {
   int numberOfNonNullStatistics() {
@@ -32,7 +33,7 @@ namespace wazuhl {
     if (DebugLogging)
       dbgs() << "Starting Wazuhl optimization process.\n";
 
-    PolicyEvaluator OptimizationEvaluator{OptimizationEnv};
+    LearningPolicyEvaluator OptimizationEvaluator{OptimizationEnv};
     OptimizationEvaluator.evaluate();
 
     return OptimizationEnv.getPreservedAnalyses();
