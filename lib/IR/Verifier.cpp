@@ -457,6 +457,7 @@ private:
   void visitUserOp1(Instruction &I);
   void visitUserOp2(Instruction &I) { visitUserOp1(I); }
   void visitIntrinsicCallSite(Intrinsic::ID ID, CallSite CS);
+  void visitConstrainedFPIntrinsic(ConstrainedFPIntrinsic &FPI);
   template <class DbgIntrinsicTy>
   void visitDbgIntrinsic(StringRef Kind, DbgIntrinsicTy &DII);
   void visitAtomicCmpXchgInst(AtomicCmpXchgInst &CXI);
@@ -1024,6 +1025,8 @@ void Verifier::visitDISubprogram(const DISubprogram &N) {
   AssertDI(isScope(N.getRawScope()), "invalid scope", &N, N.getRawScope());
   if (auto *F = N.getRawFile())
     AssertDI(isa<DIFile>(F), "invalid file", &N, F);
+  else
+    AssertDI(N.getLine() == 0, "line specified with no file", &N, N.getLine());
   if (auto *T = N.getRawType())
     AssertDI(isa<DISubroutineType>(T), "invalid subroutine type", &N, T);
   AssertDI(isType(N.getRawContainingType()), "invalid containing type", &N,
@@ -2115,8 +2118,6 @@ void Verifier::visitFunction(const Function &F) {
   auto *N = F.getSubprogram();
   if (!N)
     return;
-
-  visitDISubprogram(*N);
 
   // Check that all !dbg attachments lead to back to N (or, at least, another
   // subprogram that describes the same function).
@@ -3929,6 +3930,14 @@ void Verifier::visitIntrinsicCallSite(Intrinsic::ID ID, CallSite CS) {
            "constant int",
            CS);
     break;
+  case Intrinsic::experimental_constrained_fadd:
+  case Intrinsic::experimental_constrained_fsub:
+  case Intrinsic::experimental_constrained_fmul:
+  case Intrinsic::experimental_constrained_fdiv:
+  case Intrinsic::experimental_constrained_frem:
+    visitConstrainedFPIntrinsic(
+        cast<ConstrainedFPIntrinsic>(*CS.getInstruction()));
+    break;
   case Intrinsic::dbg_declare: // llvm.dbg.declare
     Assert(isa<MetadataAsValue>(CS.getArgOperand(0)),
            "invalid llvm.dbg.declare intrinsic call 1", CS);
@@ -4292,6 +4301,15 @@ static DISubprogram *getSubprogram(Metadata *LocalScope) {
   // Just return null; broken scope chains are checked elsewhere.
   assert(!isa<DILocalScope>(LocalScope) && "Unknown type of local scope");
   return nullptr;
+}
+
+void Verifier::visitConstrainedFPIntrinsic(ConstrainedFPIntrinsic &FPI) {
+  Assert(isa<MetadataAsValue>(FPI.getOperand(2)),
+         "invalid rounding mode argument", &FPI);
+  Assert(FPI.getRoundingMode() != ConstrainedFPIntrinsic::rmInvalid,
+         "invalid rounding mode argument", &FPI);
+  Assert(FPI.getExceptionBehavior() != ConstrainedFPIntrinsic::ebInvalid,
+         "invalid exception behavior argument", &FPI);
 }
 
 template <class DbgIntrinsicTy>

@@ -20,6 +20,7 @@
 #include "llvm/Analysis/MemoryBuiltins.h"
 #include "llvm/Analysis/Loads.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/OptimizationDiagnosticInfo.h"
 #include "llvm/Analysis/VectorUtils.h"
 #include "llvm/IR/CallSite.h"
 #include "llvm/IR/ConstantRange.h"
@@ -76,6 +77,9 @@ struct Query {
   AssumptionCache *AC;
   const Instruction *CxtI;
   const DominatorTree *DT;
+  // Unlike the other analyses, this may be a nullptr because not all clients
+  // provide it currently.
+  OptimizationRemarkEmitter *ORE;
 
   /// Set of assumptions that should be excluded from further queries.
   /// This is because of the potential for mutual recursion to cause
@@ -90,11 +94,12 @@ struct Query {
   unsigned NumExcluded;
 
   Query(const DataLayout &DL, AssumptionCache *AC, const Instruction *CxtI,
-        const DominatorTree *DT)
-      : DL(DL), AC(AC), CxtI(CxtI), DT(DT), NumExcluded(0) {}
+        const DominatorTree *DT, OptimizationRemarkEmitter *ORE = nullptr)
+      : DL(DL), AC(AC), CxtI(CxtI), DT(DT), ORE(ORE), NumExcluded(0) {}
 
   Query(const Query &Q, const Value *NewExcl)
-      : DL(Q.DL), AC(Q.AC), CxtI(Q.CxtI), DT(Q.DT), NumExcluded(Q.NumExcluded) {
+      : DL(Q.DL), AC(Q.AC), CxtI(Q.CxtI), DT(Q.DT), ORE(Q.ORE),
+        NumExcluded(Q.NumExcluded) {
     Excluded = Q.Excluded;
     Excluded[NumExcluded++] = NewExcl;
     assert(NumExcluded <= Excluded.size());
@@ -131,9 +136,10 @@ static void computeKnownBits(const Value *V, APInt &KnownZero, APInt &KnownOne,
 void llvm::computeKnownBits(const Value *V, APInt &KnownZero, APInt &KnownOne,
                             const DataLayout &DL, unsigned Depth,
                             AssumptionCache *AC, const Instruction *CxtI,
-                            const DominatorTree *DT) {
+                            const DominatorTree *DT,
+                            OptimizationRemarkEmitter *ORE) {
   ::computeKnownBits(V, KnownZero, KnownOne, Depth,
-                     Query(DL, AC, safeCxtI(V, CxtI), DT));
+                     Query(DL, AC, safeCxtI(V, CxtI), DT, ORE));
 }
 
 bool llvm::haveNoCommonBitsSet(const Value *LHS, const Value *RHS,
@@ -553,6 +559,13 @@ static void computeKnownBitsFromAssume(const Value *V, APInt &KnownZero,
       KnownOne.setAllBits();
       return;
     }
+    if (match(Arg, m_Not(m_Specific(V))) &&
+        isValidAssumeForContext(I, Q.CxtI, Q.DT)) {
+      assert(BitWidth == 1 && "assume operand is not i1?");
+      KnownZero.setAllBits();
+      KnownOne.clearAllBits();
+      return;
+    }
 
     // The remaining tests are all recursive, so bail out if we hit the limit.
     if (Depth == MaxDepth)
@@ -779,6 +792,24 @@ static void computeKnownBitsFromAssume(const Value *V, APInt &KnownZero,
       else
         KnownZero |=
           APInt::getHighBitsSet(BitWidth, RHSKnownZero.countLeadingOnes());
+    }
+  }
+
+  // If assumptions conflict with each other or previous known bits, then we
+  // have a logical fallacy. It's possible that the assumption is not reachable,
+  // so this isn't a real bug. On the other hand, the program may have undefined
+  // behavior, or we might have a bug in the compiler. We can't assert/crash, so
+  // clear out the known bits, try to warn the user, and hope for the best.
+  if ((KnownZero & KnownOne) != 0) {
+    KnownZero.clearAllBits();
+    KnownOne.clearAllBits();
+
+    if (Q.ORE) {
+      auto *CxtI = const_cast<Instruction *>(Q.CxtI);
+      OptimizationRemarkAnalysis ORA("value-tracking", "BadAssumption", CxtI);
+      Q.ORE->emit(ORA << "Detected conflicting code assumptions. Program may "
+                         "have undefined behavior, or compiler may have "
+                         "internal error.");
     }
   }
 }
@@ -1400,6 +1431,11 @@ static void computeKnownBitsFromOperator(const Operator *I, APInt &KnownZero,
     if (const IntrinsicInst *II = dyn_cast<IntrinsicInst>(I)) {
       switch (II->getIntrinsicID()) {
       default: break;
+      case Intrinsic::bitreverse:
+        computeKnownBits(I->getOperand(0), KnownZero2, KnownOne2, Depth + 1, Q);
+        KnownZero = KnownZero2.reverseBits();
+        KnownOne = KnownOne2.reverseBits();
+        break;
       case Intrinsic::bswap:
         computeKnownBits(I->getOperand(0), KnownZero2, KnownOne2, Depth + 1, Q);
         KnownZero |= KnownZero2.byteSwap();
@@ -1788,10 +1824,12 @@ static bool rangeMetadataExcludesValue(const MDNode* Ranges, const APInt& Value)
   return true;
 }
 
-/// Return true if the given value is known to be non-zero when defined.
-/// For vectors return true if every element is known to be non-zero when
-/// defined. Supports values with integer or pointer type and vectors of
-/// integers.
+/// Return true if the given value is known to be non-zero when defined. For
+/// vectors, return true if every element is known to be non-zero when
+/// defined. For pointers, if the context instruction and dominator tree are
+/// specified, perform context-sensitive analysis and return true if the
+/// pointer couldn't possibly be null at the specified instruction.
+/// Supports values with integer or pointer type and vectors of integers.
 bool isKnownNonZero(const Value *V, unsigned Depth, const Query &Q) {
   if (auto *C = dyn_cast<Constant>(V)) {
     if (C->isNullValue())
@@ -1834,7 +1872,7 @@ bool isKnownNonZero(const Value *V, unsigned Depth, const Query &Q) {
 
   // Check for pointer simplifications.
   if (V->getType()->isPointerTy()) {
-    if (isKnownNonNull(V))
+    if (isKnownNonNullAt(V, Q.CxtI, Q.DT))
       return true;
     if (const GEPOperator *GEP = dyn_cast<GEPOperator>(V))
       if (isGEPKnownNonNull(GEP, Depth, Q))
@@ -2436,7 +2474,7 @@ Intrinsic::ID llvm::getIntrinsicForCallSite(ImmutableCallSite ICS,
   if (!TLI)
     return Intrinsic::not_intrinsic;
 
-  LibFunc::Func Func;
+  LibFunc Func;
   // We're going to make assumptions on the semantics of the functions, check
   // that the target knows that it's available in this environment and it does
   // not have local linkage.
@@ -2451,81 +2489,81 @@ Intrinsic::ID llvm::getIntrinsicForCallSite(ImmutableCallSite ICS,
   switch (Func) {
   default:
     break;
-  case LibFunc::sin:
-  case LibFunc::sinf:
-  case LibFunc::sinl:
+  case LibFunc_sin:
+  case LibFunc_sinf:
+  case LibFunc_sinl:
     return Intrinsic::sin;
-  case LibFunc::cos:
-  case LibFunc::cosf:
-  case LibFunc::cosl:
+  case LibFunc_cos:
+  case LibFunc_cosf:
+  case LibFunc_cosl:
     return Intrinsic::cos;
-  case LibFunc::exp:
-  case LibFunc::expf:
-  case LibFunc::expl:
+  case LibFunc_exp:
+  case LibFunc_expf:
+  case LibFunc_expl:
     return Intrinsic::exp;
-  case LibFunc::exp2:
-  case LibFunc::exp2f:
-  case LibFunc::exp2l:
+  case LibFunc_exp2:
+  case LibFunc_exp2f:
+  case LibFunc_exp2l:
     return Intrinsic::exp2;
-  case LibFunc::log:
-  case LibFunc::logf:
-  case LibFunc::logl:
+  case LibFunc_log:
+  case LibFunc_logf:
+  case LibFunc_logl:
     return Intrinsic::log;
-  case LibFunc::log10:
-  case LibFunc::log10f:
-  case LibFunc::log10l:
+  case LibFunc_log10:
+  case LibFunc_log10f:
+  case LibFunc_log10l:
     return Intrinsic::log10;
-  case LibFunc::log2:
-  case LibFunc::log2f:
-  case LibFunc::log2l:
+  case LibFunc_log2:
+  case LibFunc_log2f:
+  case LibFunc_log2l:
     return Intrinsic::log2;
-  case LibFunc::fabs:
-  case LibFunc::fabsf:
-  case LibFunc::fabsl:
+  case LibFunc_fabs:
+  case LibFunc_fabsf:
+  case LibFunc_fabsl:
     return Intrinsic::fabs;
-  case LibFunc::fmin:
-  case LibFunc::fminf:
-  case LibFunc::fminl:
+  case LibFunc_fmin:
+  case LibFunc_fminf:
+  case LibFunc_fminl:
     return Intrinsic::minnum;
-  case LibFunc::fmax:
-  case LibFunc::fmaxf:
-  case LibFunc::fmaxl:
+  case LibFunc_fmax:
+  case LibFunc_fmaxf:
+  case LibFunc_fmaxl:
     return Intrinsic::maxnum;
-  case LibFunc::copysign:
-  case LibFunc::copysignf:
-  case LibFunc::copysignl:
+  case LibFunc_copysign:
+  case LibFunc_copysignf:
+  case LibFunc_copysignl:
     return Intrinsic::copysign;
-  case LibFunc::floor:
-  case LibFunc::floorf:
-  case LibFunc::floorl:
+  case LibFunc_floor:
+  case LibFunc_floorf:
+  case LibFunc_floorl:
     return Intrinsic::floor;
-  case LibFunc::ceil:
-  case LibFunc::ceilf:
-  case LibFunc::ceill:
+  case LibFunc_ceil:
+  case LibFunc_ceilf:
+  case LibFunc_ceill:
     return Intrinsic::ceil;
-  case LibFunc::trunc:
-  case LibFunc::truncf:
-  case LibFunc::truncl:
+  case LibFunc_trunc:
+  case LibFunc_truncf:
+  case LibFunc_truncl:
     return Intrinsic::trunc;
-  case LibFunc::rint:
-  case LibFunc::rintf:
-  case LibFunc::rintl:
+  case LibFunc_rint:
+  case LibFunc_rintf:
+  case LibFunc_rintl:
     return Intrinsic::rint;
-  case LibFunc::nearbyint:
-  case LibFunc::nearbyintf:
-  case LibFunc::nearbyintl:
+  case LibFunc_nearbyint:
+  case LibFunc_nearbyintf:
+  case LibFunc_nearbyintl:
     return Intrinsic::nearbyint;
-  case LibFunc::round:
-  case LibFunc::roundf:
-  case LibFunc::roundl:
+  case LibFunc_round:
+  case LibFunc_roundf:
+  case LibFunc_roundl:
     return Intrinsic::round;
-  case LibFunc::pow:
-  case LibFunc::powf:
-  case LibFunc::powl:
+  case LibFunc_pow:
+  case LibFunc_powf:
+  case LibFunc_powl:
     return Intrinsic::pow;
-  case LibFunc::sqrt:
-  case LibFunc::sqrtf:
-  case LibFunc::sqrtl:
+  case LibFunc_sqrt:
+  case LibFunc_sqrtf:
+  case LibFunc_sqrtl:
     if (ICS->hasNoNaNs())
       return Intrinsic::sqrt;
     return Intrinsic::not_intrinsic;
@@ -2590,6 +2628,11 @@ static bool cannotBeOrderedLessThanZeroImpl(const Value *V,
                                             const TargetLibraryInfo *TLI,
                                             bool SignBitOnly,
                                             unsigned Depth) {
+  // TODO: This function does not do the right thing when SignBitOnly is true
+  // and we're lowering to a hypothetical IEEE 754-compliant-but-evil platform
+  // which flips the sign bits of NaNs.  See
+  // https://llvm.org/bugs/show_bug.cgi?id=31702.
+
   if (const ConstantFP *CFP = dyn_cast<ConstantFP>(V)) {
     return !CFP->getValueAPF().isNegative() ||
            (!SignBitOnly && CFP->getValueAPF().isZero());
@@ -2633,7 +2676,8 @@ static bool cannotBeOrderedLessThanZeroImpl(const Value *V,
     return cannotBeOrderedLessThanZeroImpl(I->getOperand(0), TLI, SignBitOnly,
                                            Depth + 1);
   case Instruction::Call:
-    Intrinsic::ID IID = getIntrinsicForCallSite(cast<CallInst>(I), TLI);
+    const auto *CI = cast<CallInst>(I);
+    Intrinsic::ID IID = getIntrinsicForCallSite(CI, TLI);
     switch (IID) {
     default:
       break;
@@ -2650,16 +2694,37 @@ static bool cannotBeOrderedLessThanZeroImpl(const Value *V,
     case Intrinsic::exp:
     case Intrinsic::exp2:
     case Intrinsic::fabs:
-    case Intrinsic::sqrt:
       return true;
+
+    case Intrinsic::sqrt:
+      // sqrt(x) is always >= -0 or NaN.  Moreover, sqrt(x) == -0 iff x == -0.
+      if (!SignBitOnly)
+        return true;
+      return CI->hasNoNaNs() && (CI->hasNoSignedZeros() ||
+                                 CannotBeNegativeZero(CI->getOperand(0), TLI));
+
     case Intrinsic::powi:
-      if (ConstantInt *CI = dyn_cast<ConstantInt>(I->getOperand(1))) {
+      if (ConstantInt *Exponent = dyn_cast<ConstantInt>(I->getOperand(1))) {
         // powi(x,n) is non-negative if n is even.
-        if (CI->getBitWidth() <= 64 && CI->getSExtValue() % 2u == 0)
+        if (Exponent->getBitWidth() <= 64 && Exponent->getSExtValue() % 2u == 0)
           return true;
       }
+      // TODO: This is not correct.  Given that exp is an integer, here are the
+      // ways that pow can return a negative value:
+      //
+      //   pow(x, exp)    --> negative if exp is odd and x is negative.
+      //   pow(-0, exp)   --> -inf if exp is negative odd.
+      //   pow(-0, exp)   --> -0 if exp is positive odd.
+      //   pow(-inf, exp) --> -0 if exp is negative odd.
+      //   pow(-inf, exp) --> -inf if exp is positive odd.
+      //
+      // Therefore, if !SignBitOnly, we can return true if x >= +0 or x is NaN,
+      // but we must return false if x == -0.  Unfortunately we do not currently
+      // have a way of expressing this constraint.  See details in
+      // https://llvm.org/bugs/show_bug.cgi?id=31702.
       return cannotBeOrderedLessThanZeroImpl(I->getOperand(0), TLI, SignBitOnly,
                                              Depth + 1);
+
     case Intrinsic::fma:
     case Intrinsic::fmuladd:
       // x*x+y is non-negative if y is non-negative.
@@ -3327,6 +3392,10 @@ bool llvm::isSafeToSpeculativelyExecute(const Value *V,
       case Intrinsic::rint:
       case Intrinsic::round:
         return true;
+      // These intrinsics do not correspond to any libm function, and
+      // do not set errno.
+      case Intrinsic::powi:
+        return true;
       // TODO: are convert_{from,to}_fp16 safe?
       // TODO: can we list target-specific intrinsics here?
       default: break;
@@ -3406,6 +3475,16 @@ static bool isKnownNonNullFromDominatingCondition(const Value *V,
     if (NumUsesExplored >= DomConditionsMaxUses)
       break;
     NumUsesExplored++;
+
+    // If the value is used as an argument to a call or invoke, then argument
+    // attributes may provide an answer about null-ness.
+    if (auto CS = ImmutableCallSite(U))
+      if (auto *CalledFunc = CS.getCalledFunction())
+        for (const Argument &Arg : CalledFunc->args())
+          if (CS.getArgOperand(Arg.getArgNo()) == V &&
+              Arg.hasNonNullAttr() && DT->dominates(CS.getInstruction(), CtxI))
+            return true;
+
     // Consider only compare instructions uniquely controlling a branch
     CmpInst::Predicate Pred;
     if (!match(const_cast<User *>(U),
@@ -3906,6 +3985,37 @@ static SelectPatternResult matchMinMax(CmpInst::Predicate Pred,
                                        Value *CmpLHS, Value *CmpRHS,
                                        Value *TrueVal, Value *FalseVal,
                                        Value *&LHS, Value *&RHS) {
+  // Assume success. If there's no match, callers should not use these anyway.
+  LHS = TrueVal;
+  RHS = FalseVal;
+
+  // Recognize variations of:
+  // CLAMP(v,l,h) ==> ((v) < (l) ? (l) : ((v) > (h) ? (h) : (v)))
+  const APInt *C1;
+  if (CmpRHS == TrueVal && match(CmpRHS, m_APInt(C1))) {
+    const APInt *C2;
+
+    // (X <s C1) ? C1 : SMIN(X, C2) ==> SMAX(SMIN(X, C2), C1)
+    if (match(FalseVal, m_SMin(m_Specific(CmpLHS), m_APInt(C2))) &&
+        C1->slt(*C2) && Pred == CmpInst::ICMP_SLT)
+      return {SPF_SMAX, SPNB_NA, false};
+
+    // (X >s C1) ? C1 : SMAX(X, C2) ==> SMIN(SMAX(X, C2), C1)
+    if (match(FalseVal, m_SMax(m_Specific(CmpLHS), m_APInt(C2))) &&
+        C1->sgt(*C2) && Pred == CmpInst::ICMP_SGT)
+      return {SPF_SMIN, SPNB_NA, false};
+
+    // (X <u C1) ? C1 : UMIN(X, C2) ==> UMAX(UMIN(X, C2), C1)
+    if (match(FalseVal, m_UMin(m_Specific(CmpLHS), m_APInt(C2))) &&
+        C1->ult(*C2) && Pred == CmpInst::ICMP_ULT)
+      return {SPF_UMAX, SPNB_NA, false};
+
+    // (X >u C1) ? C1 : UMAX(X, C2) ==> UMIN(UMAX(X, C2), C1)
+    if (match(FalseVal, m_UMax(m_Specific(CmpLHS), m_APInt(C2))) &&
+        C1->ugt(*C2) && Pred == CmpInst::ICMP_UGT)
+      return {SPF_UMIN, SPNB_NA, false};
+  }
+
   if (Pred != CmpInst::ICMP_SGT && Pred != CmpInst::ICMP_SLT)
     return {SPF_UNKNOWN, SPNB_NA, false};
 
@@ -3913,23 +4023,16 @@ static SelectPatternResult matchMinMax(CmpInst::Predicate Pred,
   // (X >s Y) ? 0 : Z ==> (Z >s 0) ? 0 : Z ==> SMIN(Z, 0)
   // (X <s Y) ? 0 : Z ==> (Z <s 0) ? 0 : Z ==> SMAX(Z, 0)
   if (match(TrueVal, m_Zero()) &&
-      match(FalseVal, m_NSWSub(m_Specific(CmpLHS), m_Specific(CmpRHS)))) {
-    LHS = TrueVal;
-    RHS = FalseVal;
+      match(FalseVal, m_NSWSub(m_Specific(CmpLHS), m_Specific(CmpRHS))))
     return {Pred == CmpInst::ICMP_SGT ? SPF_SMIN : SPF_SMAX, SPNB_NA, false};
-  }
 
   // Z = X -nsw Y
   // (X >s Y) ? Z : 0 ==> (Z >s 0) ? Z : 0 ==> SMAX(Z, 0)
   // (X <s Y) ? Z : 0 ==> (Z <s 0) ? Z : 0 ==> SMIN(Z, 0)
   if (match(FalseVal, m_Zero()) &&
-      match(TrueVal, m_NSWSub(m_Specific(CmpLHS), m_Specific(CmpRHS)))) {
-    LHS = TrueVal;
-    RHS = FalseVal;
+      match(TrueVal, m_NSWSub(m_Specific(CmpLHS), m_Specific(CmpRHS))))
     return {Pred == CmpInst::ICMP_SGT ? SPF_SMAX : SPF_SMIN, SPNB_NA, false};
-  }
 
-  const APInt *C1;
   if (!match(CmpRHS, m_APInt(C1)))
     return {SPF_UNKNOWN, SPNB_NA, false};
 
@@ -3940,41 +4043,29 @@ static SelectPatternResult matchMinMax(CmpInst::Predicate Pred,
     // Is the sign bit set?
     // (X <s 0) ? X : MAXVAL ==> (X >u MAXVAL) ? X : MAXVAL ==> UMAX
     // (X <s 0) ? MAXVAL : X ==> (X >u MAXVAL) ? MAXVAL : X ==> UMIN
-    if (Pred == CmpInst::ICMP_SLT && *C1 == 0 && C2->isMaxSignedValue()) {
-      LHS = TrueVal;
-      RHS = FalseVal;
+    if (Pred == CmpInst::ICMP_SLT && *C1 == 0 && C2->isMaxSignedValue())
       return {CmpLHS == TrueVal ? SPF_UMAX : SPF_UMIN, SPNB_NA, false};
-    }
 
     // Is the sign bit clear?
     // (X >s -1) ? MINVAL : X ==> (X <u MINVAL) ? MINVAL : X ==> UMAX
     // (X >s -1) ? X : MINVAL ==> (X <u MINVAL) ? X : MINVAL ==> UMIN
     if (Pred == CmpInst::ICMP_SGT && C1->isAllOnesValue() &&
-        C2->isMinSignedValue()) {
-      LHS = TrueVal;
-      RHS = FalseVal;
+        C2->isMinSignedValue())
       return {CmpLHS == FalseVal ? SPF_UMAX : SPF_UMIN, SPNB_NA, false};
-    }
   }
 
   // Look through 'not' ops to find disguised signed min/max.
   // (X >s C) ? ~X : ~C ==> (~X <s ~C) ? ~X : ~C ==> SMIN(~X, ~C)
   // (X <s C) ? ~X : ~C ==> (~X >s ~C) ? ~X : ~C ==> SMAX(~X, ~C)
   if (match(TrueVal, m_Not(m_Specific(CmpLHS))) &&
-      match(FalseVal, m_APInt(C2)) && ~(*C1) == *C2) {
-    LHS = TrueVal;
-    RHS = FalseVal;
+      match(FalseVal, m_APInt(C2)) && ~(*C1) == *C2)
     return {Pred == CmpInst::ICMP_SGT ? SPF_SMIN : SPF_SMAX, SPNB_NA, false};
-  }
 
   // (X >s C) ? ~C : ~X ==> (~X <s ~C) ? ~C : ~X ==> SMAX(~C, ~X)
   // (X <s C) ? ~C : ~X ==> (~X >s ~C) ? ~C : ~X ==> SMIN(~C, ~X)
   if (match(FalseVal, m_Not(m_Specific(CmpLHS))) &&
-      match(TrueVal, m_APInt(C2)) && ~(*C1) == *C2) {
-    LHS = TrueVal;
-    RHS = FalseVal;
+      match(TrueVal, m_APInt(C2)) && ~(*C1) == *C2)
     return {Pred == CmpInst::ICMP_SGT ? SPF_SMAX : SPF_SMIN, SPNB_NA, false};
-  }
 
   return {SPF_UNKNOWN, SPNB_NA, false};
 }
@@ -4101,58 +4192,64 @@ static SelectPatternResult matchSelectPattern(CmpInst::Predicate Pred,
 
 static Value *lookThroughCast(CmpInst *CmpI, Value *V1, Value *V2,
                               Instruction::CastOps *CastOp) {
-  CastInst *CI = dyn_cast<CastInst>(V1);
-  Constant *C = dyn_cast<Constant>(V2);
-  if (!CI)
+  auto *Cast1 = dyn_cast<CastInst>(V1);
+  if (!Cast1)
     return nullptr;
-  *CastOp = CI->getOpcode();
 
-  if (auto *CI2 = dyn_cast<CastInst>(V2)) {
-    // If V1 and V2 are both the same cast from the same type, we can look
-    // through V1.
-    if (CI2->getOpcode() == CI->getOpcode() &&
-        CI2->getSrcTy() == CI->getSrcTy())
-      return CI2->getOperand(0);
-    return nullptr;
-  } else if (!C) {
+  *CastOp = Cast1->getOpcode();
+  Type *SrcTy = Cast1->getSrcTy();
+  if (auto *Cast2 = dyn_cast<CastInst>(V2)) {
+    // If V1 and V2 are both the same cast from the same type, look through V1.
+    if (*CastOp == Cast2->getOpcode() && SrcTy == Cast2->getSrcTy())
+      return Cast2->getOperand(0);
     return nullptr;
   }
 
+  auto *C = dyn_cast<Constant>(V2);
+  if (!C)
+    return nullptr;
+
   Constant *CastedTo = nullptr;
-
-  if (isa<ZExtInst>(CI) && CmpI->isUnsigned())
-    CastedTo = ConstantExpr::getTrunc(C, CI->getSrcTy());
-
-  if (isa<SExtInst>(CI) && CmpI->isSigned())
-    CastedTo = ConstantExpr::getTrunc(C, CI->getSrcTy(), true);
-
-  if (isa<TruncInst>(CI))
-    CastedTo = ConstantExpr::getIntegerCast(C, CI->getSrcTy(), CmpI->isSigned());
-
-  if (isa<FPTruncInst>(CI))
-    CastedTo = ConstantExpr::getFPExtend(C, CI->getSrcTy(), true);
-
-  if (isa<FPExtInst>(CI))
-    CastedTo = ConstantExpr::getFPTrunc(C, CI->getSrcTy(), true);
-
-  if (isa<FPToUIInst>(CI))
-    CastedTo = ConstantExpr::getUIToFP(C, CI->getSrcTy(), true);
-
-  if (isa<FPToSIInst>(CI))
-    CastedTo = ConstantExpr::getSIToFP(C, CI->getSrcTy(), true);
-
-  if (isa<UIToFPInst>(CI))
-    CastedTo = ConstantExpr::getFPToUI(C, CI->getSrcTy(), true);
-
-  if (isa<SIToFPInst>(CI))
-    CastedTo = ConstantExpr::getFPToSI(C, CI->getSrcTy(), true);
+  switch (*CastOp) {
+  case Instruction::ZExt:
+    if (CmpI->isUnsigned())
+      CastedTo = ConstantExpr::getTrunc(C, SrcTy);
+    break;
+  case Instruction::SExt:
+    if (CmpI->isSigned())
+      CastedTo = ConstantExpr::getTrunc(C, SrcTy, true);
+    break;
+  case Instruction::Trunc:
+    CastedTo = ConstantExpr::getIntegerCast(C, SrcTy, CmpI->isSigned());
+    break;
+  case Instruction::FPTrunc:
+    CastedTo = ConstantExpr::getFPExtend(C, SrcTy, true);
+    break;
+  case Instruction::FPExt:
+    CastedTo = ConstantExpr::getFPTrunc(C, SrcTy, true);
+    break;
+  case Instruction::FPToUI:
+    CastedTo = ConstantExpr::getUIToFP(C, SrcTy, true);
+    break;
+  case Instruction::FPToSI:
+    CastedTo = ConstantExpr::getSIToFP(C, SrcTy, true);
+    break;
+  case Instruction::UIToFP:
+    CastedTo = ConstantExpr::getFPToUI(C, SrcTy, true);
+    break;
+  case Instruction::SIToFP:
+    CastedTo = ConstantExpr::getFPToSI(C, SrcTy, true);
+    break;
+  default:
+    break;
+  }
 
   if (!CastedTo)
     return nullptr;
 
-  Constant *CastedBack =
-      ConstantExpr::getCast(CI->getOpcode(), CastedTo, C->getType(), true);
   // Make sure the cast doesn't lose any information.
+  Constant *CastedBack =
+      ConstantExpr::getCast(*CastOp, CastedTo, C->getType(), true);
   if (CastedBack != C)
     return nullptr;
 

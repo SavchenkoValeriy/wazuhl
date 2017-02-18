@@ -27,6 +27,7 @@
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/LLVMContext.h"
@@ -50,6 +51,16 @@ static cl::opt<bool>
 UnrollRuntimeEpilog("unroll-runtime-epilog", cl::init(false), cl::Hidden,
                     cl::desc("Allow runtime unrolled loops to be unrolled "
                              "with epilog instead of prolog."));
+
+static cl::opt<bool>
+UnrollVerifyDomtree("unroll-verify-domtree", cl::Hidden,
+                    cl::desc("Verify domtree after unrolling"),
+#ifdef NDEBUG
+    cl::init(false)
+#else
+    cl::init(true)
+#endif
+                    );
 
 /// Convert the instruction operands from referencing the current values into
 /// those specified by VMap.
@@ -189,11 +200,14 @@ const Loop* llvm::addClonedBlockToLoopInfo(BasicBlock *OriginalBB,
     assert(OriginalBB == OldLoop->getHeader() &&
            "Header should be first in RPO");
 
+    NewLoop = new Loop();
     Loop *NewLoopParent = NewLoops.lookup(OldLoop->getParentLoop());
-    assert(NewLoopParent &&
-           "Expected parent loop before sub-loop in RPO");
-    NewLoop = new Loop;
-    NewLoopParent->addChildLoop(NewLoop);
+
+    if (NewLoopParent)
+      NewLoopParent->addChildLoop(NewLoop);
+    else
+      LI->addTopLevelLoop(NewLoop);
+
     NewLoop->addBasicBlockToLoop(ClonedBB, *LI);
     return OldLoop;
   } else {
@@ -293,8 +307,10 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount, bool Force,
     Count = TripCount;
 
   // Don't enter the unroll code if there is nothing to do.
-  if (TripCount == 0 && Count < 2 && PeelCount == 0)
+  if (TripCount == 0 && Count < 2 && PeelCount == 0) {
+    DEBUG(dbgs() << "Won't unroll; almost nothing to do\n");
     return false;
+  }
 
   assert(Count > 0);
   assert(TripMultiple > 0);
@@ -327,7 +343,7 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount, bool Force,
          "and peeling for the same loop");
 
   if (PeelCount)
-    peelLoop(L, PeelCount, LI, SE, DT, PreserveLCSSA);
+    peelLoop(L, PeelCount, LI, SE, DT, AC, PreserveLCSSA);
 
   // Loops containing convergent instructions must have a count that divides
   // their TripMultiple.
@@ -349,8 +365,12 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount, bool Force,
                                   PreserveLCSSA)) {
     if (Force)
       RuntimeTripCount = false;
-    else
+    else {
+      DEBUG(
+          dbgs() << "Wont unroll; remainder loop could not be generated"
+                    "when assuming runtime trip count\n");
       return false;
+    }
   }
 
   // Notify ScalarEvolution that the loop will be substantially changed,
@@ -443,6 +463,12 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount, bool Force,
   for (Loop *SubLoop : *L)
     LoopsToSimplify.insert(SubLoop);
 
+  if (Header->getParent()->isDebugInfoForProfiling())
+    for (BasicBlock *BB : L->getBlocks())
+      for (Instruction &I : *BB)
+        if (const DILocation *DIL = I.getDebugLoc())
+          I.setDebugLoc(DIL->cloneWithDuplicationFactor(Count));
+
   for (unsigned It = 1; It != Count; ++It) {
     std::vector<BasicBlock*> NewBlocks;
     SmallDenseMap<const Loop *, Loop *, 4> NewLoops;
@@ -453,19 +479,16 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount, bool Force,
       BasicBlock *New = CloneBasicBlock(*BB, VMap, "." + Twine(It));
       Header->getParent()->getBasicBlockList().push_back(New);
 
+      assert((*BB != Header || LI->getLoopFor(*BB) == L) &&
+             "Header should not be in a sub-loop");
       // Tell LI about New.
-      if (*BB == Header) {
-        assert(LI->getLoopFor(*BB) == L && "Header should not be in a sub-loop");
-        L->addBasicBlockToLoop(New, *LI);
-      } else {
-        const Loop *OldLoop = addClonedBlockToLoopInfo(*BB, New, LI, NewLoops);
-        if (OldLoop) {
-          LoopsToSimplify.insert(NewLoops[OldLoop]);
+      const Loop *OldLoop = addClonedBlockToLoopInfo(*BB, New, LI, NewLoops);
+      if (OldLoop) {
+        LoopsToSimplify.insert(NewLoops[OldLoop]);
 
-          // Forget the old loop, since its inputs may have changed.
-          if (SE)
-            SE->forgetLoop(OldLoop);
-        }
+        // Forget the old loop, since its inputs may have changed.
+        if (SE)
+          SE->forgetLoop(OldLoop);
       }
 
       if (*BB == Header)
@@ -612,14 +635,11 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount, bool Force,
       Term->eraseFromParent();
     }
   }
+
   // Update dominators of blocks we might reach through exits.
   // Immediate dominator of such block might change, because we add more
   // routes which can lead to the exit: we can now reach it from the copied
-  // iterations too. Thus, the new idom of the block will be the nearest
-  // common dominator of the previous idom and common dominator of all copies of
-  // the previous idom. This is equivalent to the nearest common dominator of
-  // the previous idom and the first latch, which dominates all copies of the
-  // previous idom.
+  // iterations too.
   if (DT && Count > 1) {
     for (auto *BB : OriginalLoopBlocks) {
       auto *BBDomNode = DT->getNode(BB);
@@ -629,11 +649,37 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount, bool Force,
         if (!L->contains(ChildBB))
           ChildrenToUpdate.push_back(ChildBB);
       }
-      BasicBlock *NewIDom = DT->findNearestCommonDominator(BB, Latches[0]);
+      BasicBlock *NewIDom;
+      if (BB == LatchBlock) {
+        // The latch is special because we emit unconditional branches in
+        // some cases where the original loop contained a conditional branch.
+        // Since the latch is always at the bottom of the loop, if the latch
+        // dominated an exit before unrolling, the new dominator of that exit
+        // must also be a latch.  Specifically, the dominator is the first
+        // latch which ends in a conditional branch, or the last latch if
+        // there is no such latch.
+        NewIDom = Latches.back();
+        for (BasicBlock *IterLatch : Latches) {
+          TerminatorInst *Term = IterLatch->getTerminator();
+          if (isa<BranchInst>(Term) && cast<BranchInst>(Term)->isConditional()) {
+            NewIDom = IterLatch;
+            break;
+          }
+        }
+      } else {
+        // The new idom of the block will be the nearest common dominator
+        // of all copies of the previous idom. This is equivalent to the
+        // nearest common dominator of the previous idom and the first latch,
+        // which dominates all copies of the previous idom.
+        NewIDom = DT->findNearestCommonDominator(BB, LatchBlock);
+      }
       for (auto *ChildBB : ChildrenToUpdate)
         DT->changeImmediateDominator(ChildBB, NewIDom);
     }
   }
+
+  if (DT && UnrollVerifyDomtree)
+    DT->verifyDomTree();
 
   // Merge adjacent basic blocks, if possible.
   SmallPtrSet<Loop *, 4> ForgottenLoops;
@@ -651,13 +697,6 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount, bool Force,
       }
     }
   }
-
-  // FIXME: We only preserve DT info for complete unrolling now. Incrementally
-  // updating domtree after partial loop unrolling should also be easy.
-  if (DT && !CompletelyUnroll)
-    DT->recalculate(*L->getHeader()->getParent());
-  else if (DT)
-    DEBUG(DT->verifyDomTree());
 
   // Simplify any new induction variables in the partially unrolled loop.
   if (SE && !CompletelyUnroll && Count > 1) {
@@ -718,29 +757,29 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount, bool Force,
   // at least one layer outside of the loop that was unrolled so that any
   // changes to the parent loop exposed by the unrolling are considered.
   if (DT) {
-    if (!OuterL && !CompletelyUnroll)
-      OuterL = L;
     if (OuterL) {
       // OuterL includes all loops for which we can break loop-simplify, so
       // it's sufficient to simplify only it (it'll recursively simplify inner
       // loops too).
+      if (NeedToFixLCSSA) {
+        // LCSSA must be performed on the outermost affected loop. The unrolled
+        // loop's last loop latch is guaranteed to be in the outermost loop
+        // after LoopInfo's been updated by markAsRemoved.
+        Loop *LatchLoop = LI->getLoopFor(Latches.back());
+        Loop *FixLCSSALoop = OuterL;
+        if (!FixLCSSALoop->contains(LatchLoop))
+          while (FixLCSSALoop->getParentLoop() != LatchLoop)
+            FixLCSSALoop = FixLCSSALoop->getParentLoop();
+
+        formLCSSARecursively(*FixLCSSALoop, *DT, LI, SE);
+      } else if (PreserveLCSSA) {
+        assert(OuterL->isLCSSAForm(*DT) &&
+               "Loops should be in LCSSA form after loop-unroll.");
+      }
+
       // TODO: That potentially might be compile-time expensive. We should try
       // to fix the loop-simplified form incrementally.
       simplifyLoop(OuterL, DT, LI, SE, AC, PreserveLCSSA);
-
-      // LCSSA must be performed on the outermost affected loop. The unrolled
-      // loop's last loop latch is guaranteed to be in the outermost loop after
-      // LoopInfo's been updated by markAsRemoved.
-      Loop *LatchLoop = LI->getLoopFor(Latches.back());
-      if (!OuterL->contains(LatchLoop))
-        while (OuterL->getParentLoop() != LatchLoop)
-          OuterL = OuterL->getParentLoop();
-
-      if (NeedToFixLCSSA)
-        formLCSSARecursively(*OuterL, *DT, LI, SE);
-      else
-        assert(OuterL->isLCSSAForm(*DT) &&
-               "Loops should be in LCSSA form after loop-unroll.");
     } else {
       // Simplify loops for which we might've broken loop-simplify form.
       for (Loop *SubLoop : LoopsToSimplify)

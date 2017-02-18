@@ -75,12 +75,6 @@ static cl::opt<bool> PrintImports("print-imports", cl::init(false), cl::Hidden,
 static cl::opt<bool> ComputeDead("compute-dead", cl::init(true), cl::Hidden,
                                  cl::desc("Compute dead symbols"));
 
-// Temporary allows the function import pass to disable always linking
-// referenced discardable symbols.
-static cl::opt<bool>
-    DontForceImportReferencedDiscardableSymbols("disable-force-link-odr",
-                                                cl::init(false), cl::Hidden);
-
 static cl::opt<bool> EnableImportMetadata(
     "enable-import-metadata", cl::init(
 #if !defined(NDEBUG)
@@ -540,6 +534,23 @@ llvm::EmitImportsFiles(StringRef ModulePath, StringRef OutputFilename,
 /// Fixup WeakForLinker linkages in \p TheModule based on summary analysis.
 void llvm::thinLTOResolveWeakForLinkerModule(
     Module &TheModule, const GVSummaryMapTy &DefinedGlobals) {
+  auto ConvertToDeclaration = [](GlobalValue &GV) {
+    DEBUG(dbgs() << "Converting to a declaration: `" << GV.getName() << "\n");
+    if (Function *F = dyn_cast<Function>(&GV)) {
+      F->deleteBody();
+      F->clearMetadata();
+    } else if (GlobalVariable *V = dyn_cast<GlobalVariable>(&GV)) {
+      V->setInitializer(nullptr);
+      V->setLinkage(GlobalValue::ExternalLinkage);
+      V->clearMetadata();
+    } else
+      // For now we don't resolve or drop aliases. Once we do we'll
+      // need to add support here for creating either a function or
+      // variable declaration, and return the new GlobalValue* for
+      // the caller to use.
+      assert(false && "Expected function or variable");
+  };
+
   auto updateLinkage = [&](GlobalValue &GV) {
     if (!GlobalValue::isWeakForLinker(GV.getLinkage()))
       return;
@@ -550,18 +561,25 @@ void llvm::thinLTOResolveWeakForLinkerModule(
     auto NewLinkage = GS->second->linkage();
     if (NewLinkage == GV.getLinkage())
       return;
-    DEBUG(dbgs() << "ODR fixing up linkage for `" << GV.getName() << "` from "
-                 << GV.getLinkage() << " to " << NewLinkage << "\n");
-    GV.setLinkage(NewLinkage);
-    // Remove functions converted to available_externally from comdats,
+    // Check for a non-prevailing def that has interposable linkage
+    // (e.g. non-odr weak or linkonce). In that case we can't simply
+    // convert to available_externally, since it would lose the
+    // interposable property and possibly get inlined. Simply drop
+    // the definition in that case.
+    if (GlobalValue::isAvailableExternallyLinkage(NewLinkage) &&
+        GlobalValue::isInterposableLinkage(GV.getLinkage()))
+      ConvertToDeclaration(GV);
+    else {
+      DEBUG(dbgs() << "ODR fixing up linkage for `" << GV.getName() << "` from "
+                   << GV.getLinkage() << " to " << NewLinkage << "\n");
+      GV.setLinkage(NewLinkage);
+    }
+    // Remove declarations from comdats, including available_externally
     // as this is a declaration for the linker, and will be dropped eventually.
     // It is illegal for comdats to contain declarations.
     auto *GO = dyn_cast_or_null<GlobalObject>(&GV);
-    if (GO && GO->isDeclarationForLinker() && GO->hasComdat()) {
-      assert(GO->hasAvailableExternallyLinkage() &&
-             "Expected comdat on definition (possibly available external)");
+    if (GO && GO->isDeclarationForLinker() && GO->hasComdat())
       GO->setComdat(nullptr);
-    }
   };
 
   // Process functions and global now
@@ -635,14 +653,12 @@ void llvm::thinLTOInternalizeModule(Module &TheModule,
 // index.
 //
 Expected<bool> FunctionImporter::importFunctions(
-    Module &DestModule, const FunctionImporter::ImportMapTy &ImportList,
-    bool ForceImportReferencedDiscardableSymbols) {
+    Module &DestModule, const FunctionImporter::ImportMapTy &ImportList) {
   DEBUG(dbgs() << "Starting import for Module "
                << DestModule.getModuleIdentifier() << "\n");
   unsigned ImportedCount = 0;
 
-  // Linker that will be used for importing function
-  Linker TheLinker(DestModule);
+  IRMover Mover(DestModule);
   // Do the actual import of functions now, one Module at a time
   std::set<StringRef> ModuleNameOrderedList;
   for (auto &FunctionsToImportPerModule : ImportList) {
@@ -666,7 +682,7 @@ Expected<bool> FunctionImporter::importFunctions(
 
     auto &ImportGUIDs = FunctionsToImportPerModule->second;
     // Find the globals to import
-    DenseSet<const GlobalValue *> GlobalsToImport;
+    SetVector<GlobalValue *> GlobalsToImport;
     for (Function &F : *SrcModule) {
       if (!F.hasName())
         continue;
@@ -705,6 +721,13 @@ Expected<bool> FunctionImporter::importFunctions(
       }
     }
     for (GlobalAlias &GA : SrcModule->aliases()) {
+      // FIXME: This should eventually be controlled entirely by the summary.
+      if (FunctionImportGlobalProcessing::doImportAsDefinition(
+              &GA, &GlobalsToImport)) {
+        GlobalsToImport.insert(&GA);
+        continue;
+      }
+
       if (!GA.hasName())
         continue;
       auto GUID = GA.getGUID();
@@ -749,12 +772,9 @@ Expected<bool> FunctionImporter::importFunctions(
                << " from " << SrcModule->getSourceFileName() << "\n";
     }
 
-    // Instruct the linker that the client will take care of linkonce resolution
-    unsigned Flags = Linker::Flags::None;
-    if (!ForceImportReferencedDiscardableSymbols)
-      Flags |= Linker::Flags::DontForceLinkLinkonceODR;
-
-    if (TheLinker.linkInModule(std::move(SrcModule), Flags, &GlobalsToImport))
+    if (Mover.move(std::move(SrcModule), GlobalsToImport.getArrayRef(),
+                   [](GlobalValue &, IRMover::ValueAdder) {},
+                   /*IsPerformingImport=*/true))
       report_fatal_error("Function Import: link error");
 
     ImportedCount += GlobalsToImport.size();
@@ -814,8 +834,7 @@ static bool doImportingForModule(Module &M) {
     return loadFile(Identifier, M.getContext());
   };
   FunctionImporter Importer(*Index, ModuleLoader);
-  Expected<bool> Result = Importer.importFunctions(
-      M, ImportList, !DontForceImportReferencedDiscardableSymbols);
+  Expected<bool> Result = Importer.importFunctions(M, ImportList);
 
   // FIXME: Probably need to propagate Errors through the pass manager.
   if (!Result) {

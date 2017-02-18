@@ -8,16 +8,27 @@
 //===----------------------------------------------------------------------===//
 
 #include "DwarfGenerator.h"
-#include "llvm/DebugInfo/DWARF/DWARFAbbreviationDeclaration.h"
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/Optional.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Triple.h"
+#include "llvm/Config/llvm-config.h"
+#include "llvm/DebugInfo/DWARF/DWARFCompileUnit.h"
 #include "llvm/DebugInfo/DWARF/DWARFContext.h"
 #include "llvm/DebugInfo/DWARF/DWARFDie.h"
 #include "llvm/DebugInfo/DWARF/DWARFFormValue.h"
-#include "llvm/DebugInfo/DWARF/DWARFUnit.h"
+#include "llvm/Object/ObjectFile.h"
+#include "llvm/ObjectYAML/DWARFYAML.h"
+#include "llvm/ObjectYAML/DWARFEmitter.h"
 #include "llvm/Support/Dwarf.h"
-#include "llvm/Support/Host.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/TargetSelect.h"
 #include "gtest/gtest.h"
 #include <climits>
+#include <cstdint>
+#include <cstring>
+#include <string>
 
 using namespace llvm;
 using namespace dwarf;
@@ -52,7 +63,7 @@ Triple getHostTripleForAddrSize(uint8_t AddrSize) {
 template <typename T>
 static bool HandleExpectedError(T &Expected) {
   std::string ErrorMsg;
-  handleAllErrors(Expected.takeError(), [&](const llvm::ErrorInfoBase &EI) {
+  handleAllErrors(Expected.takeError(), [&](const ErrorInfoBase &EI) {
     ErrorMsg = EI.message();
   });
   if (!ErrorMsg.empty()) {
@@ -851,8 +862,7 @@ template <uint16_t Version, class AddrType> void TestAddresses() {
   OptU64 = SubprogramDieNoPC.getHighPC(ActualLowPC);
   EXPECT_FALSE((bool)OptU64);
   EXPECT_FALSE(SubprogramDieNoPC.getLowAndHighPC(LowPC, HighPC));
-  
-  
+ 
   // Verify the that our subprogram with only a low PC value succeeds when
   // we ask for the Low PC, but fails appropriately when asked for the high PC
   // or both low and high PC values.
@@ -870,7 +880,6 @@ template <uint16_t Version, class AddrType> void TestAddresses() {
   EXPECT_FALSE((bool)OptU64);
   EXPECT_FALSE(SubprogramDieLowPC.getLowAndHighPC(LowPC, HighPC));
 
-  
   // Verify the that our subprogram with only a low PC value succeeds when
   // we ask for the Low PC, but fails appropriately when asked for the high PC
   // or both low and high PC values.
@@ -1073,7 +1082,6 @@ TEST(DWARFDebugInfo, TestRelations) {
 }
 
 TEST(DWARFDebugInfo, TestDWARFDie) {
-
   // Make sure a default constructed DWARFDie doesn't have any parent, sibling
   // or child;
   DWARFDie DefaultDie;
@@ -1157,41 +1165,35 @@ TEST(DWARFDebugInfo, TestChildIteratorsOnInvalidDie) {
   EXPECT_EQ(begin, end);
 }
 
-  
 TEST(DWARFDebugInfo, TestEmptyChildren) {
-  // Test a DIE that says it has children in the abbreviation, but actually
-  // doesn't have any attributes, will not return anything during iteration.
-  // We do this by making sure the begin and end iterators are equal.
-  uint16_t Version = 4;
-  
-  const uint8_t AddrSize = sizeof(void *);
-  initLLVMIfNeeded();
-  Triple Triple = getHostTripleForAddrSize(AddrSize);
-  auto ExpectedDG = dwarfgen::Generator::create(Triple, Version);
-  if (HandleExpectedError(ExpectedDG))
-    return;
-  dwarfgen::Generator *DG = ExpectedDG.get().get();
-  dwarfgen::CompileUnit &CU = DG->addCompileUnit();
-  
-  // Scope to allow us to re-use the same DIE names
-  {
-    // Create a compile unit DIE that has an abbreviation that says it has
-    // children, but doesn't have any actual attributes. This helps us test
-    // a DIE that has only one child: a NULL DIE.
-    auto CUDie = CU.getUnitDIE();
-    CUDie.setForceChildren();
-  }
-  
-  MemoryBufferRef FileBuffer(DG->generate(), "dwarf");
-  auto Obj = object::ObjectFile::createObjectFile(FileBuffer);
-  EXPECT_TRUE((bool)Obj);
-  DWARFContextInMemory DwarfContext(*Obj.get());
-  
+  const char *yamldata = "debug_abbrev:\n"
+                         "  - Code:            0x00000001\n"
+                         "    Tag:             DW_TAG_compile_unit\n"
+                         "    Children:        DW_CHILDREN_yes\n"
+                         "    Attributes:\n"
+                         "debug_info:\n"
+                         "  - Length:          9\n"
+                         "    Version:         4\n"
+                         "    AbbrOffset:      0\n"
+                         "    AddrSize:        8\n"
+                         "    Entries:\n"
+                         "      - AbbrCode:        0x00000001\n"
+                         "        Values:\n"
+                         "      - AbbrCode:        0x00000000\n"
+                         "        Values:\n";
+
+  auto ErrOrSections = DWARFYAML::EmitDebugSections(StringRef(yamldata));
+  ASSERT_TRUE((bool)ErrOrSections);
+
+  auto &DebugSections = *ErrOrSections;
+
+  DWARFContextInMemory DwarfContext(DebugSections, 8);
+
   // Verify the number of compile units is correct.
   uint32_t NumCUs = DwarfContext.getNumCompileUnits();
   EXPECT_EQ(NumCUs, 1u);
   DWARFCompileUnit *U = DwarfContext.getCompileUnitAtIndex(0);
-  
+
   // Get the compile unit DIE is valid.
   auto CUDie = U->getUnitDIE(false);
   EXPECT_TRUE(CUDie.isValid());
@@ -1369,7 +1371,6 @@ TEST(DWARFDebugInfo, TestDwarfToFunctions) {
   EXPECT_EQ(InvalidU64, toSectionOffset(FormValOpt, InvalidU64));
   EXPECT_EQ(InvalidS64, toSigned(FormValOpt, InvalidS64));
 
-  
   // Test successful and unsuccessful address decoding.
   uint64_t Address = 0x100000000ULL;
   FormVal.setForm(DW_FORM_addr);
@@ -1527,9 +1528,9 @@ TEST(DWARFDebugInfo, TestFindAttrs) {
   // in the DIE returns nothing.
   EXPECT_FALSE(FuncDie.find({DW_AT_low_pc, DW_AT_entry_pc}).hasValue());
 
-  ArrayRef<dwarf::Attribute>
-      Attrs = { DW_AT_linkage_name, DW_AT_MIPS_linkage_name };
-  
+  const dwarf::Attribute Attrs[] = {DW_AT_linkage_name,
+                                    DW_AT_MIPS_linkage_name};
+
   // Make sure we can't extract the linkage name attributes when using
   // DWARFDie::find() since it won't check the DW_AT_specification DIE.
   EXPECT_FALSE(FuncDie.find(Attrs).hasValue());
@@ -1540,7 +1541,6 @@ TEST(DWARFDebugInfo, TestFindAttrs) {
   auto NameOpt = FuncDie.findRecursively(Attrs);
   EXPECT_TRUE(NameOpt.hasValue());
   EXPECT_EQ(DieMangled, toString(NameOpt, ""));
-  
 }
 
 } // end anonymous namespace

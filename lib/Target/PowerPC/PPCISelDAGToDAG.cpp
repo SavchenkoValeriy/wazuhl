@@ -2964,7 +2964,11 @@ void PPCDAGToDAGISel::Select(SDNode *N) {
             SelectAddrIdxOnly(LD->getBasePtr(), Base, Offset)) {
           SDValue Chain = LD->getChain();
           SDValue Ops[] = { Base, Offset, Chain };
-          CurDAG->SelectNodeTo(N, PPC::LXVDSX, N->getValueType(0), Ops);
+          SDNode *NewN = CurDAG->SelectNodeTo(N, PPC::LXVDSX,
+                                              N->getValueType(0), Ops);
+          MachineSDNode::mmo_iterator MemOp = MF->allocateMemRefsArray(1);
+          MemOp[0] = LD->getMemOperand();
+          cast<MachineSDNode>(NewN)->setMemRefs(MemOp, MemOp + 1);
           return;
         }
       }
@@ -3536,10 +3540,6 @@ void PPCDAGToDAGISel::PostprocessISelDAG() {
 // be folded with the isel so that we don't need to materialize a register
 // containing zero.
 bool PPCDAGToDAGISel::AllUsersSelectZero(SDNode *N) {
-  // If we're not using isel, then this does not matter.
-  if (!PPCSubTarget->hasISEL())
-    return false;
-
   for (SDNode::use_iterator UI = N->use_begin(), UE = N->use_end();
        UI != UE; ++UI) {
     SDNode *User = *UI;

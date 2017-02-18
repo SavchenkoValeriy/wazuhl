@@ -688,12 +688,13 @@ public:
                             MachineBasicBlock *FBB, MachineBasicBlock *CurBB,
                             MachineBasicBlock *SwitchBB,
                             Instruction::BinaryOps Opc, BranchProbability TW,
-                            BranchProbability FW);
+                            BranchProbability FW, bool InvertCond);
   void EmitBranchForMergedCondition(const Value *Cond, MachineBasicBlock *TBB,
                                     MachineBasicBlock *FBB,
                                     MachineBasicBlock *CurBB,
                                     MachineBasicBlock *SwitchBB,
-                                    BranchProbability TW, BranchProbability FW);
+                                    BranchProbability TW, BranchProbability FW,
+                                    bool InvertCond);
   bool ShouldEmitAsBranches(const std::vector<CaseBlock> &Cases);
   bool isExportableFromCurrentBlock(const Value *V, const BasicBlock *FromBB);
   void CopyToExportRegsIfNeeded(const Value *V);
@@ -900,6 +901,7 @@ private:
   void visitInlineAsm(ImmutableCallSite CS);
   const char *visitIntrinsicCall(const CallInst &I, unsigned Intrinsic);
   void visitTargetIntrinsic(const CallInst &I, unsigned Intrinsic);
+  void visitConstrainedFPIntrinsic(const CallInst &I, unsigned Intrinsic);
 
   void visitVAStart(const CallInst &I);
   void visitVAArg(const VAArgInst &I);

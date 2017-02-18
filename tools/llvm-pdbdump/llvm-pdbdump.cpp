@@ -14,6 +14,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm-pdbdump.h"
+
+#include "Analyze.h"
 #include "LLVMOutputStyle.h"
 #include "LinePrinter.h"
 #include "OutputStyle.h"
@@ -35,23 +37,24 @@
 #include "llvm/DebugInfo/PDB/IPDBEnumChildren.h"
 #include "llvm/DebugInfo/PDB/IPDBRawSymbol.h"
 #include "llvm/DebugInfo/PDB/IPDBSession.h"
+#include "llvm/DebugInfo/PDB/Native/DbiStream.h"
+#include "llvm/DebugInfo/PDB/Native/DbiStreamBuilder.h"
+#include "llvm/DebugInfo/PDB/Native/InfoStream.h"
+#include "llvm/DebugInfo/PDB/Native/InfoStreamBuilder.h"
+#include "llvm/DebugInfo/PDB/Native/NativeSession.h"
+#include "llvm/DebugInfo/PDB/Native/PDBFile.h"
+#include "llvm/DebugInfo/PDB/Native/PDBFileBuilder.h"
+#include "llvm/DebugInfo/PDB/Native/RawConstants.h"
+#include "llvm/DebugInfo/PDB/Native/RawError.h"
+#include "llvm/DebugInfo/PDB/Native/StringTableBuilder.h"
+#include "llvm/DebugInfo/PDB/Native/TpiStream.h"
+#include "llvm/DebugInfo/PDB/Native/TpiStreamBuilder.h"
 #include "llvm/DebugInfo/PDB/PDB.h"
 #include "llvm/DebugInfo/PDB/PDBSymbolCompiland.h"
 #include "llvm/DebugInfo/PDB/PDBSymbolData.h"
 #include "llvm/DebugInfo/PDB/PDBSymbolExe.h"
 #include "llvm/DebugInfo/PDB/PDBSymbolFunc.h"
 #include "llvm/DebugInfo/PDB/PDBSymbolThunk.h"
-#include "llvm/DebugInfo/PDB/Raw/DbiStream.h"
-#include "llvm/DebugInfo/PDB/Raw/DbiStreamBuilder.h"
-#include "llvm/DebugInfo/PDB/Raw/InfoStream.h"
-#include "llvm/DebugInfo/PDB/Raw/InfoStreamBuilder.h"
-#include "llvm/DebugInfo/PDB/Raw/PDBFile.h"
-#include "llvm/DebugInfo/PDB/Raw/PDBFileBuilder.h"
-#include "llvm/DebugInfo/PDB/Raw/RawConstants.h"
-#include "llvm/DebugInfo/PDB/Raw/RawError.h"
-#include "llvm/DebugInfo/PDB/Raw/RawSession.h"
-#include "llvm/DebugInfo/PDB/Raw/TpiStream.h"
-#include "llvm/DebugInfo/PDB/Raw/TpiStreamBuilder.h"
 #include "llvm/Support/COM.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ConvertUTF.h"
@@ -84,6 +87,10 @@ cl::SubCommand
 cl::SubCommand
     PdbToYamlSubcommand("pdb2yaml",
                         "Generate a detailed YAML description of a PDB File");
+
+cl::SubCommand
+    AnalyzeSubcommand("analyze",
+                      "Analyze various aspects of a PDB's structure");
 
 cl::OptionCategory TypeCategory("Symbol Type Options");
 cl::OptionCategory FilterCategory("Filtering Options");
@@ -232,6 +239,9 @@ cl::opt<bool>
                        cl::cat(SymbolOptions), cl::sub(RawSubcommand));
 
 // MISCELLANEOUS OPTIONS
+cl::opt<bool> DumpStringTable("string-table", cl::desc("dump PDB String Table"),
+                              cl::cat(MiscOptions), cl::sub(RawSubcommand));
+
 cl::opt<bool> DumpSectionContribs("section-contribs",
                                   cl::desc("dump section contributions"),
                                   cl::cat(MiscOptions), cl::sub(RawSubcommand));
@@ -279,6 +289,10 @@ cl::opt<bool> StreamDirectory(
 cl::opt<bool> PdbStream("pdb-stream",
                         cl::desc("Dump the PDB Stream (Stream 1)"),
                         cl::sub(PdbToYamlSubcommand), cl::init(false));
+
+cl::opt<bool> StringTable("string-table", cl::desc("Dump the PDB String Table"),
+                          cl::sub(PdbToYamlSubcommand), cl::init(false));
+
 cl::opt<bool> DbiStream("dbi-stream",
                         cl::desc("Dump the DBI Stream (Stream 2)"),
                         cl::sub(PdbToYamlSubcommand), cl::init(false));
@@ -309,6 +323,14 @@ cl::opt<bool> IpiStream("ipi-stream",
 cl::list<std::string> InputFilename(cl::Positional,
                                     cl::desc("<input PDB file>"), cl::Required,
                                     cl::sub(PdbToYamlSubcommand));
+}
+
+namespace analyze {
+cl::opt<bool> StringTable("hash-collisions", cl::desc("Find hash collisions"),
+                          cl::sub(AnalyzeSubcommand), cl::init(false));
+cl::list<std::string> InputFilename(cl::Positional,
+                                    cl::desc("<input PDB file>"), cl::Required,
+                                    cl::sub(AnalyzeSubcommand));
 }
 }
 
@@ -345,15 +367,18 @@ static void yamlToPdb(StringRef Path) {
   for (uint32_t I = 0; I < kSpecialStreamCount; ++I)
     ExitOnErr(Builder.getMsfBuilder().addStream(0));
 
+  if (YamlObj.StringTable.hasValue()) {
+    auto &Strings = Builder.getStringTableBuilder();
+    for (auto S : *YamlObj.StringTable)
+      Strings.insert(S);
+  }
+
   if (YamlObj.PdbStream.hasValue()) {
     auto &InfoBuilder = Builder.getInfoBuilder();
     InfoBuilder.setAge(YamlObj.PdbStream->Age);
     InfoBuilder.setGuid(YamlObj.PdbStream->Guid);
     InfoBuilder.setSignature(YamlObj.PdbStream->Signature);
     InfoBuilder.setVersion(YamlObj.PdbStream->Version);
-    for (auto &NM : YamlObj.PdbStream->NamedStreams)
-      InfoBuilder.getNamedStreamsBuilder().addMapping(NM.StreamName,
-                                                      NM.StreamNumber);
   }
 
   if (YamlObj.DbiStream.hasValue()) {
@@ -391,9 +416,9 @@ static void yamlToPdb(StringRef Path) {
 
 static void pdb2Yaml(StringRef Path) {
   std::unique_ptr<IPDBSession> Session;
-  ExitOnErr(loadDataForPDB(PDB_ReaderType::Raw, Path, Session));
+  ExitOnErr(loadDataForPDB(PDB_ReaderType::Native, Path, Session));
 
-  RawSession *RS = static_cast<RawSession *>(Session.get());
+  NativeSession *RS = static_cast<NativeSession *>(Session.get());
   PDBFile &File = RS->getPDBFile();
   auto O = llvm::make_unique<YAMLOutputStyle>(File);
   O = llvm::make_unique<YAMLOutputStyle>(File);
@@ -403,11 +428,22 @@ static void pdb2Yaml(StringRef Path) {
 
 static void dumpRaw(StringRef Path) {
   std::unique_ptr<IPDBSession> Session;
-  ExitOnErr(loadDataForPDB(PDB_ReaderType::Raw, Path, Session));
+  ExitOnErr(loadDataForPDB(PDB_ReaderType::Native, Path, Session));
 
-  RawSession *RS = static_cast<RawSession *>(Session.get());
+  NativeSession *RS = static_cast<NativeSession *>(Session.get());
   PDBFile &File = RS->getPDBFile();
   auto O = llvm::make_unique<LLVMOutputStyle>(File);
+
+  ExitOnErr(O->dump());
+}
+
+static void dumpAnalysis(StringRef Path) {
+  std::unique_ptr<IPDBSession> Session;
+  ExitOnErr(loadDataForPDB(PDB_ReaderType::Native, Path, Session));
+
+  NativeSession *NS = static_cast<NativeSession *>(Session.get());
+  PDBFile &File = NS->getPDBFile();
+  auto O = llvm::make_unique<AnalysisStyle>(File);
 
   ExitOnErr(O->dump());
 }
@@ -580,6 +616,7 @@ int main(int argc_, const char *argv_[]) {
       opts::raw::DumpSectionContribs = true;
       opts::raw::DumpLineInfo = true;
       opts::raw::DumpFpo = true;
+      opts::raw::DumpStringTable = true;
     }
 
     if (opts::raw::CompactRecords &&
@@ -596,6 +633,8 @@ int main(int argc_, const char *argv_[]) {
     pdb2Yaml(opts::pdb2yaml::InputFilename.front());
   } else if (opts::YamlToPdbSubcommand) {
     yamlToPdb(opts::yaml2pdb::InputFilename.front());
+  } else if (opts::AnalyzeSubcommand) {
+    dumpAnalysis(opts::analyze::InputFilename.front());
   } else if (opts::PrettySubcommand) {
     if (opts::pretty::Lines)
       opts::pretty::Compilands = true;

@@ -672,7 +672,7 @@ DIE *DwarfUnit::getOrCreateContextDIE(const DIScope *Context) {
   return getDIE(Context);
 }
 
-DIE *DwarfUnit::createTypeDIE(const DICompositeType *Ty) {
+DIE *DwarfTypeUnit::createTypeDIE(const DICompositeType *Ty) {
   auto *Context = resolve(Ty->getScope());
   DIE *ContextDIE = getOrCreateContextDIE(Context);
 
@@ -1180,8 +1180,12 @@ bool DwarfUnit::applySubprogramDefinitionAttributes(const DISubprogram *SP,
 }
 
 void DwarfUnit::applySubprogramAttributes(const DISubprogram *SP, DIE &SPDie,
-                                          bool Minimal) {
-  if (!Minimal)
+                                          bool SkipSPAttributes) {
+  // If -fdebug-info-for-profiling is enabled, need to emit the subprogram
+  // and its source location.
+  bool SkipSPSourceLocation = SkipSPAttributes &&
+                              !CUNode->getDebugInfoForProfiling();
+  if (!SkipSPSourceLocation)
     if (applySubprogramDefinitionAttributes(SP, SPDie))
       return;
 
@@ -1189,11 +1193,12 @@ void DwarfUnit::applySubprogramAttributes(const DISubprogram *SP, DIE &SPDie,
   if (!SP->getName().empty())
     addString(SPDie, dwarf::DW_AT_name, SP->getName());
 
-  // Skip the rest of the attributes under -gmlt to save space.
-  if (Minimal)
-    return;
+  if (!SkipSPSourceLocation)
+    addSourceLine(SPDie, SP);
 
-  addSourceLine(SPDie, SP);
+  // Skip the rest of the attributes under -gmlt to save space.
+  if (SkipSPAttributes)
+    return;
 
   // Add the prototype if we have a prototype and we have a C like
   // language.
@@ -1563,4 +1568,14 @@ bool DwarfTypeUnit::isDwoUnit() const {
   // Since there are no skeleton type units, all type units are dwo type units
   // when split DWARF is being used.
   return DD->useSplitDwarf();
+}
+
+void DwarfTypeUnit::addGlobalName(StringRef Name, const DIE &Die,
+                                  const DIScope *Context) {
+  getCU().addGlobalNameForTypeUnit(Name, Context);
+}
+
+void DwarfTypeUnit::addGlobalType(const DIType *Ty, const DIE &Die,
+                                  const DIScope *Context) {
+  getCU().addGlobalTypeUnitType(Ty, Context);
 }

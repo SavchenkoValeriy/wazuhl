@@ -40,7 +40,7 @@ class VOP2_MADKe <bits<6> op, VOPProfile P> : Enc64 {
 class VOP2_SDWAe <bits<6> op, VOPProfile P> : VOP_SDWAe <P> {
   bits<8> vdst;
   bits<8> src1;
-  
+
   let Inst{8-0}   = 0xf9; // sdwa
   let Inst{16-9}  = !if(P.HasSrc1, src1{7-0}, 0);
   let Inst{24-17} = !if(P.EmitDst, vdst{7-0}, 0);
@@ -119,8 +119,7 @@ multiclass VOP2Inst <string opName,
   def _e64 : VOP3_Pseudo <opName, P, getVOP2Pat64<node, P>.ret>,
              Commutable_REV<revOp#"_e64", !eq(revOp, opName)>;
 
-  def _sdwa : VOP2_SDWA_Pseudo <opName, P>,
-              Commutable_REV<revOp#"_sdwa", !eq(revOp, opName)>;
+  def _sdwa : VOP2_SDWA_Pseudo <opName, P>;
 }
 
 // TODO: add SDWA pseudo instructions for VOP2bInst and VOP2eInst
@@ -134,10 +133,10 @@ multiclass VOP2bInst <string opName,
     let Uses = !if(useSGPRInput, [VCC, EXEC], [EXEC]), Defs = [VCC] in {
       def _e32 : VOP2_Pseudo <opName, P>,
                  Commutable_REV<revOp#"_e32", !eq(revOp, opName)>;
-      
-      def _sdwa : VOP2_SDWA_Pseudo <opName, P>,
-              Commutable_REV<revOp#"_sdwa", !eq(revOp, opName)>;
+
+      def _sdwa : VOP2_SDWA_Pseudo <opName, P>;
     }
+
     def _e64 : VOP3_Pseudo <opName, P, getVOP2Pat64<node, P>.ret>,
                Commutable_REV<revOp#"_e64", !eq(revOp, opName)>;
   }
@@ -154,6 +153,7 @@ multiclass VOP2eInst <string opName,
       def _e32 : VOP2_Pseudo <opName, P>,
                  Commutable_REV<revOp#"_e32", !eq(revOp, opName)>;
     }
+
     def _e64 : VOP3_Pseudo <opName, P, getVOP2Pat64<node, P>.ret>,
                Commutable_REV<revOp#"_e64", !eq(revOp, opName)>;
   }
@@ -494,6 +494,14 @@ def : Pat <
   (V_CNDMASK_B32_e64 (i32 0), (i32 -1), $src)
 >;
 
+// Undo sub x, c -> add x, -c canonicalization since c is more likely
+// an inline immediate than -c.
+// TODO: Also do for 64-bit.
+def : Pat<
+  (add i16:$src0, (i16 NegSubInlineConst16:$src1)),
+  (V_SUB_U16_e64 $src0, NegSubInlineConst16:$src1)
+>;
+
 } // End Predicates = [isVI]
 
 //===----------------------------------------------------------------------===//
@@ -646,7 +654,7 @@ multiclass Base_VOP2_Real_e32e64_vi <bits<6> op> :
   VOP2_Real_e64_vi<{0, 1, 0, 0, op{5-0}}>;
 
 } // End AssemblerPredicates = [isVI], DecoderNamespace = "VI"
- 
+
 multiclass VOP2_SDWA_Real <bits<6> op> {
   def _sdwa_vi :
     VOP_SDWA_Real <!cast<VOP2_SDWA_Pseudo>(NAME#"_sdwa")>,

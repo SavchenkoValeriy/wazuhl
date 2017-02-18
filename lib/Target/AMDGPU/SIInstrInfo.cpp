@@ -315,7 +315,8 @@ bool SIInstrInfo::shouldClusterMemOps(MachineInstr &FirstLdSt,
   const MachineOperand *SecondDst = nullptr;
 
   if ((isMUBUF(FirstLdSt) && isMUBUF(SecondLdSt)) ||
-      (isMTBUF(FirstLdSt) && isMTBUF(SecondLdSt))) {
+      (isMTBUF(FirstLdSt) && isMTBUF(SecondLdSt)) ||
+      (isFLAT(FirstLdSt) && isFLAT(SecondLdSt))) {
     FirstDst = getNamedOperand(FirstLdSt, AMDGPU::OpName::vdata);
     SecondDst = getNamedOperand(SecondLdSt, AMDGPU::OpName::vdata);
   } else if (isSMRD(FirstLdSt) && isSMRD(SecondLdSt)) {
@@ -1291,6 +1292,13 @@ unsigned SIInstrInfo::removeBranch(MachineBasicBlock &MBB,
   return Count;
 }
 
+// Copy the flags onto the implicit condition register operand.
+static void preserveCondRegFlags(MachineOperand &CondReg,
+                                 const MachineOperand &OrigCond) {
+  CondReg.setIsUndef(OrigCond.isUndef());
+  CondReg.setIsKill(OrigCond.isKill());
+}
+
 unsigned SIInstrInfo::insertBranch(MachineBasicBlock &MBB,
                                    MachineBasicBlock *TBB,
                                    MachineBasicBlock *FBB,
@@ -1318,9 +1326,7 @@ unsigned SIInstrInfo::insertBranch(MachineBasicBlock &MBB,
       .addMBB(TBB);
 
     // Copy the flags onto the implicit condition register operand.
-    MachineOperand &CondReg = CondBr->getOperand(1);
-    CondReg.setIsUndef(Cond[1].isUndef());
-    CondReg.setIsKill(Cond[1].isKill());
+    preserveCondRegFlags(CondBr->getOperand(1), Cond[1]);
 
     if (BytesAdded)
       *BytesAdded = 4;
@@ -1350,6 +1356,136 @@ bool SIInstrInfo::reverseBranchCondition(
   assert(Cond.size() == 2);
   Cond[0].setImm(-Cond[0].getImm());
   return false;
+}
+
+bool SIInstrInfo::canInsertSelect(const MachineBasicBlock &MBB,
+                                  ArrayRef<MachineOperand> Cond,
+                                  unsigned TrueReg, unsigned FalseReg,
+                                  int &CondCycles,
+                                  int &TrueCycles, int &FalseCycles) const {
+  switch (Cond[0].getImm()) {
+  case VCCNZ:
+  case VCCZ: {
+    const MachineRegisterInfo &MRI = MBB.getParent()->getRegInfo();
+    const TargetRegisterClass *RC = MRI.getRegClass(TrueReg);
+    assert(MRI.getRegClass(FalseReg) == RC);
+
+    int NumInsts = AMDGPU::getRegBitWidth(RC->getID()) / 32;
+    CondCycles = TrueCycles = FalseCycles = NumInsts; // ???
+
+    // Limit to equal cost for branch vs. N v_cndmask_b32s.
+    return !RI.isSGPRClass(RC) && NumInsts <= 6;
+  }
+  case SCC_TRUE:
+  case SCC_FALSE: {
+    // FIXME: We could insert for VGPRs if we could replace the original compare
+    // with a vector one.
+    const MachineRegisterInfo &MRI = MBB.getParent()->getRegInfo();
+    const TargetRegisterClass *RC = MRI.getRegClass(TrueReg);
+    assert(MRI.getRegClass(FalseReg) == RC);
+
+    int NumInsts = AMDGPU::getRegBitWidth(RC->getID()) / 32;
+
+    // Multiples of 8 can do s_cselect_b64
+    if (NumInsts % 2 == 0)
+      NumInsts /= 2;
+
+    CondCycles = TrueCycles = FalseCycles = NumInsts; // ???
+    return RI.isSGPRClass(RC);
+  }
+  default:
+    return false;
+  }
+}
+
+void SIInstrInfo::insertSelect(MachineBasicBlock &MBB,
+                               MachineBasicBlock::iterator I, const DebugLoc &DL,
+                               unsigned DstReg, ArrayRef<MachineOperand> Cond,
+                               unsigned TrueReg, unsigned FalseReg) const {
+  BranchPredicate Pred = static_cast<BranchPredicate>(Cond[0].getImm());
+  if (Pred == VCCZ || Pred == SCC_FALSE) {
+    Pred = static_cast<BranchPredicate>(-Pred);
+    std::swap(TrueReg, FalseReg);
+  }
+
+  MachineRegisterInfo &MRI = MBB.getParent()->getRegInfo();
+  const TargetRegisterClass *DstRC = MRI.getRegClass(DstReg);
+  unsigned DstSize = DstRC->getSize();
+
+  if (DstSize == 4) {
+    unsigned SelOp = Pred == SCC_TRUE ?
+      AMDGPU::S_CSELECT_B32 : AMDGPU::V_CNDMASK_B32_e32;
+
+    // Instruction's operands are backwards from what is expected.
+    MachineInstr *Select =
+      BuildMI(MBB, I, DL, get(SelOp), DstReg)
+      .addReg(FalseReg)
+      .addReg(TrueReg);
+
+    preserveCondRegFlags(Select->getOperand(3), Cond[1]);
+    return;
+  }
+
+  if (DstSize == 8 && Pred == SCC_TRUE) {
+    MachineInstr *Select =
+      BuildMI(MBB, I, DL, get(AMDGPU::S_CSELECT_B64), DstReg)
+      .addReg(FalseReg)
+      .addReg(TrueReg);
+
+    preserveCondRegFlags(Select->getOperand(3), Cond[1]);
+    return;
+  }
+
+  static const int16_t Sub0_15[] = {
+    AMDGPU::sub0, AMDGPU::sub1, AMDGPU::sub2, AMDGPU::sub3,
+    AMDGPU::sub4, AMDGPU::sub5, AMDGPU::sub6, AMDGPU::sub7,
+    AMDGPU::sub8, AMDGPU::sub9, AMDGPU::sub10, AMDGPU::sub11,
+    AMDGPU::sub12, AMDGPU::sub13, AMDGPU::sub14, AMDGPU::sub15,
+  };
+
+  static const int16_t Sub0_15_64[] = {
+    AMDGPU::sub0_sub1, AMDGPU::sub2_sub3,
+    AMDGPU::sub4_sub5, AMDGPU::sub6_sub7,
+    AMDGPU::sub8_sub9, AMDGPU::sub10_sub11,
+    AMDGPU::sub12_sub13, AMDGPU::sub14_sub15,
+  };
+
+  unsigned SelOp = AMDGPU::V_CNDMASK_B32_e32;
+  const TargetRegisterClass *EltRC = &AMDGPU::VGPR_32RegClass;
+  const int16_t *SubIndices = Sub0_15;
+  int NElts = DstSize / 4;
+
+  // 64-bit select is only avaialble for SALU.
+  if (Pred == SCC_TRUE) {
+    SelOp = AMDGPU::S_CSELECT_B64;
+    EltRC = &AMDGPU::SGPR_64RegClass;
+    SubIndices = Sub0_15_64;
+
+    assert(NElts % 2 == 0);
+    NElts /= 2;
+  }
+
+  MachineInstrBuilder MIB = BuildMI(
+    MBB, I, DL, get(AMDGPU::REG_SEQUENCE), DstReg);
+
+  I = MIB->getIterator();
+
+  SmallVector<unsigned, 8> Regs;
+  for (int Idx = 0; Idx != NElts; ++Idx) {
+    unsigned DstElt = MRI.createVirtualRegister(EltRC);
+    Regs.push_back(DstElt);
+
+    unsigned SubIdx = SubIndices[Idx];
+
+    MachineInstr *Select =
+      BuildMI(MBB, I, DL, get(SelOp), DstElt)
+      .addReg(FalseReg, 0, SubIdx)
+      .addReg(TrueReg, 0, SubIdx);
+    preserveCondRegFlags(Select->getOperand(3), Cond[1]);
+
+    MIB.addReg(DstElt)
+       .addImm(SubIdx);
+  }
 }
 
 static void removeModOperands(MachineInstr &MI) {
@@ -1688,7 +1824,8 @@ bool SIInstrInfo::isInlineConstant(const APInt &Imm) const {
     return AMDGPU::isInlinableLiteral64(Imm.getSExtValue(),
                                         ST.hasInv2PiInlineImm());
   case 16:
-    return AMDGPU::isInlinableLiteral16(Imm.getSExtValue(),
+    return ST.has16BitInsts() &&
+           AMDGPU::isInlinableLiteral16(Imm.getSExtValue(),
                                         ST.hasInv2PiInlineImm());
   default:
     llvm_unreachable("invalid bitwidth");
@@ -1718,8 +1855,13 @@ bool SIInstrInfo::isInlineConstant(const MachineOperand &MO,
   }
   case 16: {
     if (isInt<16>(Imm) || isUInt<16>(Imm)) {
+      // A few special case instructions have 16-bit operands on subtargets
+      // where 16-bit instructions are not legal.
+      // TODO: Do the 32-bit immediates work? We shouldn't really need to handle
+      // constants in these cases
       int16_t Trunc = static_cast<int16_t>(Imm);
-      return AMDGPU::isInlinableLiteral16(Trunc, ST.hasInv2PiInlineImm());
+      return ST.has16BitInsts() &&
+             AMDGPU::isInlinableLiteral16(Trunc, ST.hasInv2PiInlineImm());
     }
 
     return false;
@@ -3634,4 +3776,9 @@ SIInstrInfo::CreateTargetPostRAHazardRecognizer(const InstrItineraryData *II,
 ScheduleHazardRecognizer *
 SIInstrInfo::CreateTargetPostRAHazardRecognizer(const MachineFunction &MF) const {
   return new GCNHazardRecognizer(MF);
+}
+
+bool SIInstrInfo::isBasicBlockPrologue(const MachineInstr &MI) const {
+  return !MI.isTerminator() && MI.getOpcode() != AMDGPU::COPY &&
+         MI.modifiesRegister(AMDGPU::EXEC, &RI);
 }

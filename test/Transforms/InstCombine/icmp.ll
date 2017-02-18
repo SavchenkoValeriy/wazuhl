@@ -918,7 +918,7 @@ define i1 @test60_as1(i8 addrspace(1)* %foo, i64 %i, i64 %j) {
 ; CHECK-NEXT:    [[TMP1:%.*]] = trunc i64 %i to i16
 ; CHECK-NEXT:    [[TMP2:%.*]] = trunc i64 %j to i16
 ; CHECK-NEXT:    [[GEP1_IDX:%.*]] = shl nuw i16 [[TMP1]], 2
-; CHECK-NEXT:    [[TMP3:%.*]] = icmp sgt i16 [[TMP2]], [[GEP1_IDX]]
+; CHECK-NEXT:    [[TMP3:%.*]] = icmp slt i16 [[GEP1_IDX]], [[TMP2]]
 ; CHECK-NEXT:    ret i1 [[TMP3]]
 ;
   %bit = bitcast i8 addrspace(1)* %foo to i32 addrspace(1)*
@@ -949,7 +949,7 @@ define i1 @test60_addrspacecast_smaller(i8* %foo, i16 %i, i64 %j) {
 ; CHECK-LABEL: @test60_addrspacecast_smaller(
 ; CHECK-NEXT:    [[GEP1_IDX:%.*]] = shl nuw i16 %i, 2
 ; CHECK-NEXT:    [[TMP1:%.*]] = trunc i64 %j to i16
-; CHECK-NEXT:    [[TMP2:%.*]] = icmp sgt i16 [[TMP1]], [[GEP1_IDX]]
+; CHECK-NEXT:    [[TMP2:%.*]] = icmp slt i16 [[GEP1_IDX]], [[TMP1]]
 ; CHECK-NEXT:    ret i1 [[TMP2]]
 ;
   %bit = addrspacecast i8* %foo to i32 addrspace(1)*
@@ -981,7 +981,7 @@ define i1 @test61(i8* %foo, i64 %i, i64 %j) {
 ; CHECK-NEXT:    [[GEP1:%.*]] = getelementptr i32, i32* [[BIT]], i64 %i
 ; CHECK-NEXT:    [[GEP2:%.*]] = getelementptr i8, i8* %foo, i64 %j
 ; CHECK-NEXT:    [[CAST1:%.*]] = bitcast i32* [[GEP1]] to i8*
-; CHECK-NEXT:    [[CMP:%.*]] = icmp ult i8* [[CAST1]], [[GEP2]]
+; CHECK-NEXT:    [[CMP:%.*]] = icmp ugt i8* [[GEP2]], [[CAST1]]
 ; CHECK-NEXT:    ret i1 [[CMP]]
 ;
   %bit = bitcast i8* %foo to i32*
@@ -999,7 +999,7 @@ define i1 @test61_as1(i8 addrspace(1)* %foo, i16 %i, i16 %j) {
 ; CHECK-NEXT:    [[GEP1:%.*]] = getelementptr i32, i32 addrspace(1)* [[BIT]], i16 %i
 ; CHECK-NEXT:    [[GEP2:%.*]] = getelementptr i8, i8 addrspace(1)* %foo, i16 %j
 ; CHECK-NEXT:    [[CAST1:%.*]] = bitcast i32 addrspace(1)* [[GEP1]] to i8 addrspace(1)*
-; CHECK-NEXT:    [[CMP:%.*]] = icmp ult i8 addrspace(1)* [[CAST1]], [[GEP2]]
+; CHECK-NEXT:    [[CMP:%.*]] = icmp ugt i8 addrspace(1)* [[GEP2]], [[CAST1]]
 ; CHECK-NEXT:    ret i1 [[CMP]]
 ;
   %bit = bitcast i8 addrspace(1)* %foo to i32 addrspace(1)*
@@ -1183,12 +1183,11 @@ define i1 @icmp_sext8trunc(i32 %x) {
   ret i1 %cmp
 }
 
-; FIXME: Vectors should fold the same way.
+; Vectors should fold the same way.
 define <2 x i1> @icmp_sext8trunc_vec(<2 x i32> %x) {
 ; CHECK-LABEL: @icmp_sext8trunc_vec(
-; CHECK-NEXT:    [[SEXT1:%.*]] = shl <2 x i32> %x, <i32 24, i32 24>
-; CHECK-NEXT:    [[SEXT:%.*]] = ashr <2 x i32> [[SEXT:%.*]]1, <i32 24, i32 24>
-; CHECK-NEXT:    [[CMP:%.*]] = icmp slt <2 x i32> [[SEXT]], <i32 36, i32 36>
+; CHECK-NEXT:    [[TMP1:%.*]] = trunc <2 x i32> %x to <2 x i8>
+; CHECK-NEXT:    [[CMP:%.*]] = icmp slt <2 x i8> [[TMP1]], <i8 36, i8 36>
 ; CHECK-NEXT:    ret <2 x i1> [[CMP]]
 ;
   %trunc = trunc <2 x i32> %x to <2 x i8>
@@ -2232,16 +2231,6 @@ define i1 @icmp_sge_zero_add_nsw(i32 %a) {
   ret i1 %cmp
 }
 
-define i1 @icmp_slt_zero_add_nsw(i32 %a) {
-; CHECK-LABEL: @icmp_slt_zero_add_nsw(
-; CHECK-NEXT:    [[CMP:%.*]] = icmp slt i32 %a, -1
-; CHECK-NEXT:    ret i1 [[CMP]]
-;
-  %add = add nsw i32 %a, 1
-  %cmp = icmp slt i32 %add, 0
-  ret i1 %cmp
-}
-
 define i1 @icmp_sle_zero_add_nsw(i32 %a) {
 ; CHECK-LABEL: @icmp_sle_zero_add_nsw(
 ; CHECK-NEXT:    [[CMP:%.*]] = icmp slt i32 %a, 0
@@ -2808,7 +2797,7 @@ define i1 @cmp_sle_rhs_inc(float %x, i32 %y) {
 ; CHECK-LABEL: @cmp_sle_rhs_inc(
 ; CHECK-NEXT:    [[CONV:%.*]] = fptosi float %x to i32
 ; CHECK-NEXT:    [[INC:%.*]] = add
-; CHECK-NEXT:    [[CMP:%.*]] = icmp sle i32 [[CONV]], [[INC]]
+; CHECK-NEXT:    [[CMP:%.*]] = icmp sge i32 [[INC]], [[CONV]]
 ; CHECK-NEXT:    ret i1 [[CMP]]
 ;
   %conv = fptosi float %x to i32
@@ -2821,7 +2810,7 @@ define i1 @cmp_ule_rhs_inc(float %x, i32 %y) {
 ; CHECK-LABEL: @cmp_ule_rhs_inc(
 ; CHECK-NEXT:    [[CONV:%.*]] = fptosi float %x to i32
 ; CHECK-NEXT:    [[INC:%.*]] = add
-; CHECK-NEXT:    [[CMP:%.*]] = icmp ule i32 [[CONV]], [[INC]]
+; CHECK-NEXT:    [[CMP:%.*]] = icmp uge i32 [[INC]], [[CONV]]
 ; CHECK-NEXT:    ret i1 [[CMP]]
 ;
   %conv = fptosi float %x to i32
@@ -2834,7 +2823,7 @@ define i1 @cmp_slt_rhs_dec(float %x, i32 %y) {
 ; CHECK-LABEL: @cmp_slt_rhs_dec(
 ; CHECK-NEXT:    [[CONV:%.*]] = fptosi float %x to i32
 ; CHECK-NEXT:    [[DEC:%.*]] = {{add|sub}}
-; CHECK-NEXT:    [[CMP:%.*]] = icmp slt i32 [[CONV]], [[DEC]]
+; CHECK-NEXT:    [[CMP:%.*]] = icmp sgt i32 [[DEC]], [[CONV]]
 ; CHECK-NEXT:    ret i1 [[CMP]]
 ;
   %conv = fptosi float %x to i32
@@ -2847,7 +2836,7 @@ define i1 @cmp_ult_rhs_dec(float %x, i32 %y) {
 ; CHECK-LABEL: @cmp_ult_rhs_dec(
 ; CHECK-NEXT:    [[CONV:%.*]] = fptosi float %x to i32
 ; CHECK-NEXT:    [[DEC:%.*]] = {{add|sub}}
-; CHECK-NEXT:    [[CMP:%.*]] = icmp ult i32 [[CONV]], [[DEC]]
+; CHECK-NEXT:    [[CMP:%.*]] = icmp ugt i32 [[DEC]], [[CONV]]
 ; CHECK-NEXT:    ret i1 [[CMP]]
 ;
   %conv = fptosi float %x to i32

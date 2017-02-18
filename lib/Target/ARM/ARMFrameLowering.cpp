@@ -16,19 +16,49 @@
 #include "ARMBaseRegisterInfo.h"
 #include "ARMConstantPoolValue.h"
 #include "ARMMachineFunctionInfo.h"
+#include "ARMSubtarget.h"
 #include "MCTargetDesc/ARMAddressingModes.h"
+#include "MCTargetDesc/ARMBaseInfo.h"
+#include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
+#include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/RegisterScavenging.h"
-#include "llvm/MC/MCAsmInfo.h"
+#include "llvm/IR/Attributes.h"
 #include "llvm/IR/CallingConv.h"
+#include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/Function.h"
 #include "llvm/MC/MCContext.h"
+#include "llvm/MC/MCDwarf.h"
+#include "llvm/MC/MCRegisterInfo.h"
+#include "llvm/Support/CodeGen.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Compiler.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MathExtras.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Target/TargetInstrInfo.h"
+#include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
+#include "llvm/Target/TargetRegisterInfo.h"
+#include "llvm/Target/TargetSubtargetInfo.h"
+#include <algorithm>
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
+#include <iterator>
+#include <utility>
+#include <vector>
 
 #define DEBUG_TYPE "arm-frame-lowering"
 
@@ -180,6 +210,7 @@ static bool WindowsRequiresStackProbe(const MachineFunction &MF,
 }
 
 namespace {
+
 struct StackAdjustingInsts {
   struct InstInfo {
     MachineBasicBlock::iterator I;
@@ -196,7 +227,8 @@ struct StackAdjustingInsts {
   }
 
   void addExtraBytes(const MachineBasicBlock::iterator I, unsigned ExtraBytes) {
-    auto Info = find_if(Insts, [&](InstInfo &Info) { return Info.I == I; });
+    auto Info =
+        llvm::find_if(Insts, [&](InstInfo &Info) { return Info.I == I; });
     assert(Info != Insts.end() && "invalid sp adjusting instruction");
     Info->SPAdjust += ExtraBytes;
   }
@@ -219,7 +251,8 @@ struct StackAdjustingInsts {
     }
   }
 };
-}
+
+} // end anonymous namespace
 
 /// Emit an instruction sequence that will align the address in
 /// register Reg by zero-ing out the lower bits.  For versions of the
@@ -468,10 +501,10 @@ void ARMFrameLowering::emitPrologue(MachineFunction &MF,
     case CodeModel::Default:
     case CodeModel::Kernel:
       BuildMI(MBB, MBBI, dl, TII.get(ARM::tBL))
-        .addImm((unsigned)ARMCC::AL).addReg(0)
-        .addExternalSymbol("__chkstk")
-        .addReg(ARM::R4, RegState::Implicit)
-        .setMIFlags(MachineInstr::FrameSetup);
+          .add(predOps(ARMCC::AL))
+          .addExternalSymbol("__chkstk")
+          .addReg(ARM::R4, RegState::Implicit)
+          .setMIFlags(MachineInstr::FrameSetup);
       break;
     case CodeModel::Large:
     case CodeModel::JITDefault:
@@ -480,10 +513,10 @@ void ARMFrameLowering::emitPrologue(MachineFunction &MF,
         .setMIFlags(MachineInstr::FrameSetup);
 
       BuildMI(MBB, MBBI, dl, TII.get(ARM::tBLXr))
-        .addImm((unsigned)ARMCC::AL).addReg(0)
-        .addReg(ARM::R12, RegState::Kill)
-        .addReg(ARM::R4, RegState::Implicit)
-        .setMIFlags(MachineInstr::FrameSetup);
+          .add(predOps(ARMCC::AL))
+          .addReg(ARM::R12, RegState::Kill)
+          .addReg(ARM::R4, RegState::Implicit)
+          .setMIFlags(MachineInstr::FrameSetup);
       break;
     }
 
@@ -684,10 +717,10 @@ void ARMFrameLowering::emitPrologue(MachineFunction &MF,
   // FIXME: Clarify FrameSetup flags here.
   if (RegInfo->hasBasePointer(MF)) {
     if (isARM)
-      BuildMI(MBB, MBBI, dl,
-              TII.get(ARM::MOVr), RegInfo->getBaseRegister())
-        .addReg(ARM::SP)
-        .addImm((unsigned)ARMCC::AL).addReg(0).addReg(0);
+      BuildMI(MBB, MBBI, dl, TII.get(ARM::MOVr), RegInfo->getBaseRegister())
+          .addReg(ARM::SP)
+          .add(predOps(ARMCC::AL))
+          .add(condCodeOp());
     else
       BuildMI(MBB, MBBI, dl, TII.get(ARM::tMOVr), RegInfo->getBaseRegister())
           .addReg(ARM::SP)
@@ -774,7 +807,9 @@ void ARMFrameLowering::emitEpilogue(MachineFunction &MF,
         // Thumb2 or ARM.
         if (isARM)
           BuildMI(MBB, MBBI, dl, TII.get(ARM::MOVr), ARM::SP)
-            .addReg(FramePtr).addImm((unsigned)ARMCC::AL).addReg(0).addReg(0);
+              .addReg(FramePtr)
+              .add(predOps(ARMCC::AL))
+              .add(condCodeOp());
         else
           BuildMI(MBB, MBBI, dl, TII.get(ARM::tMOVr), ARM::SP)
               .addReg(FramePtr)
@@ -838,7 +873,7 @@ ARMFrameLowering::ResolveFrameIndexReference(const MachineFunction &MF,
   // When dynamically realigning the stack, use the frame pointer for
   // parameters, and the stack/base pointer for locals.
   if (RegInfo->needsStackRealignment(MF)) {
-    assert (hasFP(MF) && "dynamic stack realignment without a FP!");
+    assert(hasFP(MF) && "dynamic stack realignment without a FP!");
     if (isFixed) {
       FrameReg = RegInfo->getFrameRegister(MF);
       Offset = FPOffset;
@@ -1690,11 +1725,11 @@ void ARMFrameLowering::determineCalleeSaves(MachineFunction &MF,
         SavedRegs.set(ARM::LR);
         LRSpilled = true;
         NumGPRSpills++;
-        auto LRPos = find(UnspilledCS1GPRs, ARM::LR);
+        auto LRPos = llvm::find(UnspilledCS1GPRs, ARM::LR);
         if (LRPos != UnspilledCS1GPRs.end())
           UnspilledCS1GPRs.erase(LRPos);
       }
-      auto FPPos = find(UnspilledCS1GPRs, FramePtr);
+      auto FPPos = llvm::find(UnspilledCS1GPRs, FramePtr);
       if (FPPos != UnspilledCS1GPRs.end())
         UnspilledCS1GPRs.erase(FPPos);
       NumGPRSpills++;
@@ -1805,7 +1840,7 @@ void ARMFrameLowering::determineCalleeSaves(MachineFunction &MF,
         NumGPRSpills++;
         CS1Spilled = true;
         ExtraCSSpill = true;
-        UnspilledCS1GPRs.erase(find(UnspilledCS1GPRs, Reg));
+        UnspilledCS1GPRs.erase(llvm::find(UnspilledCS1GPRs, Reg));
         if (Reg == ARM::LR)
           LRSpilled = true;
       }
@@ -1818,7 +1853,7 @@ void ARMFrameLowering::determineCalleeSaves(MachineFunction &MF,
       SavedRegs.set(ARM::LR);
       NumGPRSpills++;
       SmallVectorImpl<unsigned>::iterator LRPos;
-      LRPos = find(UnspilledCS1GPRs, (unsigned)ARM::LR);
+      LRPos = llvm::find(UnspilledCS1GPRs, (unsigned)ARM::LR);
       if (LRPos != UnspilledCS1GPRs.end())
         UnspilledCS1GPRs.erase(LRPos);
 
@@ -2150,7 +2185,7 @@ void ARMFrameLowering::adjustForSegmentedStacks(
     BuildMI(McrMBB, DL, TII.get(ARM::MOVr), ScratchReg1)
         .addReg(ARM::SP)
         .add(predOps(ARMCC::AL))
-        .addReg(0);
+        .add(condCodeOp());
   }
 
   // sub SR1, sp, #StackSize
@@ -2165,7 +2200,7 @@ void ARMFrameLowering::adjustForSegmentedStacks(
         .addReg(ARM::SP)
         .addImm(AlignedStackSize)
         .add(predOps(ARMCC::AL))
-        .addReg(0);
+        .add(condCodeOp());
   }
 
   if (Thumb && ST->isThumb1Only()) {
@@ -2238,7 +2273,7 @@ void ARMFrameLowering::adjustForSegmentedStacks(
     BuildMI(AllocMBB, DL, TII.get(ARM::MOVi), ScratchReg0)
         .addImm(AlignedStackSize)
         .add(predOps(ARMCC::AL))
-        .addReg(0);
+        .add(condCodeOp());
   }
   // Pass second argument for the __morestack by Scratch Register #1.
   //   The amount size of stack consumed to save function arguments.
@@ -2251,7 +2286,7 @@ void ARMFrameLowering::adjustForSegmentedStacks(
     BuildMI(AllocMBB, DL, TII.get(ARM::MOVi), ScratchReg1)
         .addImm(alignToARMConstant(ARMFI->getArgumentStackSize()))
         .add(predOps(ARMCC::AL))
-        .addReg(0);
+        .add(condCodeOp());
   }
 
   // push {lr} - Save return address of this function.
