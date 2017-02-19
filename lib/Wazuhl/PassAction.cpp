@@ -45,6 +45,7 @@
 
 #include "llvm/Transforms/GCOVProfiler.h"
 #include "llvm/Transforms/IPO/AlwaysInliner.h"
+#include "llvm/Transforms/IPO/ArgumentPromotion.h"
 #include "llvm/Transforms/IPO/ConstantMerge.h"
 #include "llvm/Transforms/IPO/CrossDSOCFI.h"
 #include "llvm/Transforms/IPO/DeadArgumentElimination.h"
@@ -88,9 +89,12 @@
 #include "llvm/Transforms/Scalar/LoopDistribute.h"
 #include "llvm/Transforms/Scalar/LoopIdiomRecognize.h"
 #include "llvm/Transforms/Scalar/LoopInstSimplify.h"
+#include "llvm/Transforms/Scalar/LoopLoadElimination.h"
 #include "llvm/Transforms/Scalar/LoopPassManager.h"
+#include "llvm/Transforms/Scalar/LoopPredication.h"
 #include "llvm/Transforms/Scalar/LoopRotation.h"
 #include "llvm/Transforms/Scalar/LoopSimplifyCFG.h"
+#include "llvm/Transforms/Scalar/LoopSink.h"
 #include "llvm/Transforms/Scalar/LoopStrengthReduce.h"
 #include "llvm/Transforms/Scalar/LoopUnrollPass.h"
 #include "llvm/Transforms/Scalar/LowerAtomic.h"
@@ -128,8 +132,8 @@ using namespace wazuhl;
 namespace {
   // FIXME: this is a hack specifically made for TargetIRAnalysis
   constexpr llvm::TargetMachine *TM = nullptr;
-  const std::string uselessPrefixes[] = {"profile", "print", "pgo", "dot", "view"};
-  const std::string uselessSuffixes[] = {"profile", "profiling", "prof", "import", "consthoist", "loweratomic", "unreachableblockelim", "internalize"};
+  const std::string uselessPrefixes[] = {"profile", "print", "pgo", "dot", "view", "verify", "nary"};
+  const std::string uselessSuffixes[] = {"profile", "profiling", "prof", "import", "consthoist", "loweratomic", "unreachableblockelim", "internalize", "early-cse-memssa"};
 
   inline bool isActionUsefull(const PassAction& a) {
     auto &ActionName = a.getName();

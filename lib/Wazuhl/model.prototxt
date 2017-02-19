@@ -37,7 +37,7 @@ layer {
   bottom: "data"
   top: "ip1"
   inner_product_param {
-    num_output: 113
+    num_output: 108
     weight_filler {
       type: "xavier"
     }
@@ -68,7 +68,7 @@ layer {
     batch_size: 32 
     channels: 1 
     height: 1
-    width: 113
+    width: 108
   }
 }
 layer {

@@ -391,6 +391,7 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount, bool Force,
 
   using namespace ore;
   // Report the unrolling decision.
+  if (ORE) {
   if (CompletelyUnroll) {
     DEBUG(dbgs() << "COMPLETELY UNROLLING loop %" << Header->getName()
           << " with trip count " << TripCount << "!\n");
@@ -425,6 +426,7 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, unsigned TripCount, bool Force,
       ORE->emit(Diag << " with run-time trip count");
     }
     DEBUG(dbgs() << "!\n");
+  }
   }
 
   bool ContinueOnTrue = L->contains(BI->getSuccessor(0));
