@@ -56,7 +56,7 @@ namespace wazuhl {
       FeaturesOfAllFunctions.emplace_back(FAM.getResult<FunctionFeatureCollector>(F));
     }
 
-    FeatureVector result(NumberOfOpcodes);
+    FeatureVector result(NumberOfFeatures);
     const unsigned NumberOfFunctions = FeaturesOfAllFunctions.size();
     for (unsigned i = 0; i < NumberOfFunctions; ++i) {
       for (unsigned j = 0; j < NumberOfFeatures; ++j) {
