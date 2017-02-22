@@ -589,6 +589,11 @@ public:
 
       // Otherwise look up the result object.
       auto RI = Results.find({ID, &IR});
+      // TODO: get rid of this
+      // for some reason GobalsAA can be attempted to invalidate, when
+      // it's not in the Results.
+      if (RI == Results.end()) return true;
+
       assert(RI != Results.end() &&
              "Trying to invalidate a dependent result that isn't in the "
              "manager's cache is always an error, likely due to a stale result "
