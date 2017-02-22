@@ -21,7 +21,7 @@ namespace rl {
 
     class QValue {
     public:
-      operator Result () {
+      operator Result () const {
         return Value;
       }
 
