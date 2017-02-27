@@ -2,25 +2,49 @@
 #include "llvm/Wazuhl/Environment.h"
 #include "llvm/Wazuhl/FeatureCollector.h"
 #include "llvm/Wazuhl/PolicyEvaluator.h"
+
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Support/CommandLine.h"
+
 #include <numeric>
+
+using namespace llvm;
+using namespace wazuhl;
+
+cl::opt<bool> TrainingPhase("train-wazuhl",
+                            cl::desc("Enable Wazuhl training"),
+                            cl::Hidden);
 
 namespace {
   int numberOfNonNullStatistics() {
-    auto Statistics = llvm::GetStatisticsVector();
+    auto Statistics = GetStatisticsVector();
     return std::accumulate(Statistics.begin(), Statistics.end(), 0,
                            [](int total, double value) {
                              return total + (value != 0);
                            });
   }
 
-  void registerFeatureCollectors(llvm::Module &M, llvm::ModuleAnalysisManager &AM) {
-    AM.registerPass([] { return llvm::wazuhl::ModuleFeatureCollector(); });
+  void registerFeatureCollectors(Module &M, ModuleAnalysisManager &AM) {
+    AM.registerPass([] { return ModuleFeatureCollector(); });
 
-    llvm::FunctionAnalysisManager &FAM =
-      AM.getResult<llvm::FunctionAnalysisManagerModuleProxy>(M).getManager();
+    FunctionAnalysisManager &FAM =
+      AM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
 
-    FAM.registerPass([] { return llvm::wazuhl::FunctionFeatureCollector(); });
+    FAM.registerPass([] { return FunctionFeatureCollector(); });
+  }
+
+  template <class Evaluator>
+  void evaluate(Environment &Env) {
+    Evaluator OptimizationEvaluator{Env};
+    OptimizationEvaluator.evaluate();
+  }
+
+  void train(Environment &Env) {
+    evaluate<LearningPolicyEvaluator>(Env);
+  }
+
+  void exploit(Environment &Env) {
+    evaluate<PolicyEvaluator>(Env);
   }
 }
 
@@ -33,8 +57,11 @@ namespace wazuhl {
     if (DebugLogging)
       dbgs() << "Starting Wazuhl optimization process.\n";
 
-    LearningPolicyEvaluator OptimizationEvaluator{OptimizationEnv};
-    OptimizationEvaluator.evaluate();
+    if (this->Training || TrainingPhase) {
+      train(OptimizationEnv);
+    } else {
+      exploit(OptimizationEnv);
+    }
 
     return OptimizationEnv.getPreservedAnalyses();
   }

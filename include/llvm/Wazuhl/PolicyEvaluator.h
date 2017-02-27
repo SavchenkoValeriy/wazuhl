@@ -7,7 +7,7 @@ namespace wazuhl {
   class PolicyEvaluator {
   public:
     PolicyEvaluator(Environment &env) : OptimizationEnv(env) {}
-      void evaluate();
+    void evaluate();
   private:
     Environment &OptimizationEnv;
   };
@@ -15,7 +15,7 @@ namespace wazuhl {
   class LearningPolicyEvaluator {
   public:
     LearningPolicyEvaluator(Environment &env) : OptimizationEnv(env) {}
-      void evaluate();
+    void evaluate();
   private:
     Environment &OptimizationEnv;
   };

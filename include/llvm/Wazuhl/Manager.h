@@ -9,7 +9,9 @@ namespace wazuhl {
 
   class Manager : public PassInfoMixin<Manager> {
   public:
-    explicit Manager(bool DebugLogging = false) : DebugLogging(DebugLogging) {}
+    explicit Manager(bool Training = false,
+                     bool DebugLogging = false) : Training(Training),
+                                                  DebugLogging(DebugLogging) {}
 
     Manager(Manager &) = delete;
     Manager(Manager &&) = default;
@@ -17,6 +19,7 @@ namespace wazuhl {
     PreservedAnalyses run(Module &IR, AnalysisManager<Module> &AM);
 
   private:
+    bool Training;
     bool DebugLogging;
   };
 
