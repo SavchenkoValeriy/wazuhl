@@ -1,4 +1,5 @@
 #include "llvm/Wazuhl/FeatureCollector.h"
+#include "llvm/Wazuhl/NormalizedTimer.h"
 #include "llvm/IR/InstVisitor.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
@@ -48,6 +49,7 @@ namespace wazuhl {
   FeatureVector ModuleFeatureCollector::run(Module &M, ModuleAnalysisManager &AM) {
     using FeatureVectors = std::vector<FeatureVector>;
     FeatureVectors FeaturesOfAllFunctions;
+    auto initializer = NormalizedTimer::init();
 
     FunctionAnalysisManager &FAM =
         AM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
@@ -59,10 +61,12 @@ namespace wazuhl {
     FeatureVector result(NumberOfFeatures);
     const unsigned NumberOfFunctions = FeaturesOfAllFunctions.size();
     for (unsigned i = 0; i < NumberOfFunctions; ++i) {
-      for (unsigned j = 0; j < NumberOfFeatures; ++j) {
+      for (unsigned j = 0; j < NumberOfFeatures - 1; ++j) {
         result[j] += FeaturesOfAllFunctions[i][j];
       }
     }
+
+    result[TimerIndex] = NormalizedTimer::getNormalizedTime();
 
     normalizeVector(result, NumberOfFunctions);
     return result;

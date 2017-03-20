@@ -18,6 +18,7 @@ add_llvm_library(LLVMWazuhl
   Environment.cpp
   FeatureCollector.cpp
   Manager.cpp
+  NormalizedTimer.cpp
   PassAction.cpp
   PolicyEvaluator.cpp
   Random.cpp
