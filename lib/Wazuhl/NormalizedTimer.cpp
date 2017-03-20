@@ -1,9 +1,8 @@
 #include "llvm/Wazuhl/NormalizedTimer.h"
 
 namespace {
-  double getCPUTime(llvm::Timer &timer) {
-    auto record = timer.getTotalTime();
-    return record.getUserTime() + record.getSystemTime();
+  double getCPUTime(llvm::TimeRecord &time) {
+    return time.getUserTime() + time.getSystemTime();
   }
 }
 
@@ -12,23 +11,48 @@ namespace wazuhl {
   bool NormalizedTimer::IsInitialized = false;
 
   NormalizedTimer::Initializer NormalizedTimer::init() {
-    if (!IsInitialized) return {};
+    if (IsInitialized) return {};
     return {getTimer()};
   }
 
+  NormalizedTimer::NormalizedTimer() : InnerTimer(), Total(), NormalizationFactor(0.0) {
+    InnerTimer.init("Wazuhl's timer",
+                    "The purpose of this timer is to add time into Wazuhl's states");
+    startInnerTimer();
+  }
+
   double NormalizedTimer::getTime() {
-    return getCPUTime(getTimer().InnerTimer);
+    return getTimer().getTimeImpl();
+  }
+
+  double NormalizedTimer::getTimeImpl() {
+    stopInnerTimer();
+    Total += InnerTimer.getTotalTime();
+    startInnerTimer();
+    return getCPUTime(Total);
   }
 
   double NormalizedTimer::getNormalizedTime() {
+    return getTimer().getNormalizedTimeImpl();
+  }
+
+  double NormalizedTimer::getNormalizedTimeImpl() {
     if (!IsInitialized) return 1.0;
     assert(NormalizationFactor != 0 && "Normalization factor shouldn't be 0!");
-    return getTime() / getTimer().NormalizationFactor;
+    return getTimeImpl() / NormalizationFactor;
   }
 
   NormalizedTimer &NormalizedTimer::getTimer() {
     static NormalizedTimer singleton;
     return singleton;
+  }
+
+  void NormalizedTimer::startInnerTimer() {
+    InnerTimer.startTimer();
+  }
+
+  void NormalizedTimer::stopInnerTimer() {
+    InnerTimer.stopTimer();
   }
 
   NormalizedTimer::Initializer::~Initializer() {

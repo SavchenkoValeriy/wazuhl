@@ -29,9 +29,12 @@ namespace wazuhl {
     static double getNormalizedTime();
   private:
     static NormalizedTimer &getTimer();
+    double getTimeImpl();
+    double getNormalizedTimeImpl();
+    void startInnerTimer();
+    void stopInnerTimer();
 
-    NormalizedTimer() = default;
-
+    NormalizedTimer();
     NormalizedTimer(const NormalizedTimer &) = delete;
     NormalizedTimer(NormalizedTimer &&) = delete;
 
@@ -39,6 +42,7 @@ namespace wazuhl {
     NormalizedTimer &operator = (NormalizedTimer &&) = delete;
 
     Timer InnerTimer;
+    TimeRecord Total;
     double NormalizationFactor;
     static bool IsInitialized;
     friend class Initializer;
