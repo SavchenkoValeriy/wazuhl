@@ -81,6 +81,9 @@ namespace wazuhl {
     InputLayerS CalculatingNetInput;
     SolverTy Solver;
     BlobS Output;
+
+    mutable State LastState;
+    mutable ResultsVector LastResultsVector;
   };
 
 
@@ -97,9 +100,12 @@ namespace wazuhl {
   DQNCore::~DQNCore() = default;
 
   ResultsVector DQNCoreImpl::calculate(const State &S) const {
+    if (LastState == S)
+      return LastResultsVector;
+
     // caffe requires non-const array for MemoryData
-    State SCopy{S};
-    CalculatingNetInput->Reset(SCopy.data(), TestDummy.data(), 1);
+    LastState = S;
+    CalculatingNetInput->Reset(LastState.data(), TestDummy.data(), 1);
     CalculatingNet->Forward();
     return getResultsVector();
   }
@@ -121,7 +127,7 @@ namespace wazuhl {
 
     for (auto i : seq<unsigned>(0, NumberOfActions)) {
       result[i] = Output->data_at(1/* batch-size for CalculatingNet */,
-                                 i, 0, 0);
+                                  i, 0, 0);
     }
 
     return result;

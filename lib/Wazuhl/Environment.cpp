@@ -25,7 +25,7 @@ namespace wazuhl {
   Environment::Environment(Module &IR, ModuleAnalysisManager &AM) :
     IR(IR), AM(AM), Current(), PA(PreservedAnalyses::all()) {
     llvm::errs() << "Wazuhl has " << Action::getAllPossibleActions().size() <<
-                   " actions to choose from\n";
+                    " actions to choose from\n";
   }
 
   Environment::State Environment::getState() {
