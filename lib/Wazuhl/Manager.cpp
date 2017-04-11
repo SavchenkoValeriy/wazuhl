@@ -51,8 +51,8 @@ namespace {
 namespace llvm {
 namespace wazuhl {
   PreservedAnalyses Manager::run(Module &IR, ModuleAnalysisManager &AM) {
-    Environment OptimizationEnv{IR, AM};
     registerFeatureCollectors(IR, AM);
+    Environment OptimizationEnv{IR, AM};
 
     if (DebugLogging)
       dbgs() << "Starting Wazuhl optimization process.\n";

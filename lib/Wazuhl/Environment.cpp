@@ -26,10 +26,15 @@ namespace wazuhl {
     IR(IR), AM(AM), Current(), PA(PreservedAnalyses::all()) {
     llvm::errs() << "Wazuhl has " << Action::getAllPossibleActions().size() <<
                     " actions to choose from\n";
+    updateState();
   }
 
   Environment::State Environment::getState() {
     return Current;
+  }
+
+  void Environment::updateState() {
+    Current = AM.getResult<ModuleFeatureCollector>(IR);
   }
 
   void Environment::takeAction(const Action &A) {
@@ -47,7 +52,7 @@ namespace wazuhl {
     }
 
     // collect features representing the state
-    Current = AM.getResult<ModuleFeatureCollector>(IR);
+    updateState();
   }
 
   bool Environment::isInTerminalState() {
