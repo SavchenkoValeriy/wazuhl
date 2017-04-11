@@ -22,10 +22,10 @@ namespace wazuhl {
 
     const std::string Name;
     const PassConstructorT PassConstructor;
-    const unsigned Index;
+    unsigned Index;
   public:
-    PassAction(const std::string &name, PassConstructorT ctor, unsigned index) :
-      Name(name), PassConstructor(ctor), Index(index) {}
+    PassAction(const std::string &name, PassConstructorT ctor) :
+      Name(name), PassConstructor(ctor), Index(0) {}
 
     PassActionResult *takeAction() const {
       return PassConstructor();
@@ -33,6 +33,10 @@ namespace wazuhl {
 
     const StringRef getName() const {
       return Name;
+    }
+
+    void setIndex(unsigned index) {
+      Index = index;
     }
 
     unsigned getIndex() const {

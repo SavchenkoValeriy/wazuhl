@@ -145,8 +145,13 @@ namespace {
       });
   }
 
+  inline void assignIndices(PassActionList &orderedActions) {
+    for (unsigned i = 0; i < orderedActions.size(); ++i) {
+      orderedActions[i].setIndex(i);
+    }
+  }
+
   PassActionList createAllPossibleActions() {
-    unsigned CurrentIndex = 0;
     PassActionList EverySinglePossiblePass {
 #define ANALYSIS_TO_PASS(CTR, IR_TYPE)                                         \
       RequireAnalysisPass                                                      \
@@ -159,8 +164,7 @@ namespace {
                                                 PreservedAnalyses,             \
                                                 AnalysisManager<Module>>;      \
           return new WrapperType(CTR);                                         \
-        },                                                                     \
-        CurrentIndex++                                                         \
+        }                                                                      \
       },
 #define MODULE_PASS(NAME, CREATE_PASS)                                         \
       MODULE_PASS_OR_ANALYSIS(NAME, CREATE_PASS)
@@ -191,14 +195,16 @@ namespace {
 #undef CGSCC_PASS_OR_ANALYSIS
 #undef FUNCTION_PASS_OR_ANALYSIS
 #undef LOOP_PASS_OR_ANALYSIS
-      {"terminal", [] { return nullptr; }, CurrentIndex++} /// this is a terminal action
+      {"terminal", [] { return nullptr; }} /// this is a terminal action
     };
     auto FilteredListOfActions =
       make_filter_range(EverySinglePossiblePass,
                         [] (const PassAction &a) {
                           return isActionUsefull(a);
                         });
-    return {FilteredListOfActions.begin(), FilteredListOfActions.end()};
+    PassActionList Result = {FilteredListOfActions.begin(), FilteredListOfActions.end()};
+    assignIndices(Result);
+    return Result;
   }
 
   PassActionList AllPossibleActions = createAllPossibleActions();
