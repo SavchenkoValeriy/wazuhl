@@ -20,6 +20,8 @@ namespace wazuhl {
     double getReward();
     PreservedAnalyses getPreservedAnalyses();
   private:
+    void updateState();
+
     Module &IR;
     ModuleAnalysisManager &AM;
     State Current;

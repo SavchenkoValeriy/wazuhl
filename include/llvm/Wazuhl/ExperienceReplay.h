@@ -7,20 +7,25 @@
 
 namespace llvm { namespace wazuhl {
 
-  class FeatureVector;
+  class ExperienceReplayImpl;
 
   class ExperienceReplay {
   public:
     static constexpr unsigned int MinibatchSize = 32;
+
+    ExperienceReplay();
+    ~ExperienceReplay();
 
     using ExperienceUnit = std::pair<DQNCore::State,
                                      DQNCore::ResultsVector>;
     using RecalledExperience = SmallVector<ExperienceUnit,
                                            MinibatchSize>;
 
-    void load();
     void addToExperience(ExperienceUnit);
     RecalledExperience replay();
+
+  private:
+    std::unique_ptr<ExperienceReplayImpl> pImpl;
   };
 
 } }

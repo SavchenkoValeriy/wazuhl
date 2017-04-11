@@ -1,5 +1,6 @@
 #include "llvm/Wazuhl/DQN.h"
 #include "llvm/Wazuhl/Config.h"
+#include "llvm/Wazuhl/ExperienceReplay.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
@@ -84,6 +85,8 @@ namespace wazuhl {
 
     mutable State LastState;
     mutable ResultsVector LastResultsVector;
+
+    ExperienceReplay Experience;
   };
 
 
@@ -100,14 +103,14 @@ namespace wazuhl {
   DQNCore::~DQNCore() = default;
 
   ResultsVector DQNCoreImpl::calculate(const State &S) const {
-    if (LastState == S)
-      return LastResultsVector;
-
-    // caffe requires non-const array for MemoryData
-    LastState = S;
-    CalculatingNetInput->Reset(LastState.data(), TestDummy.data(), 1);
-    CalculatingNet->Forward();
-    return getResultsVector();
+    if (LastState != S) {
+      // caffe requires non-const array for MemoryData
+      LastState = S;
+      CalculatingNetInput->Reset(LastState.data(), TestDummy.data(), 1);
+      CalculatingNet->Forward();
+      LastResultsVector = getResultsVector();
+    }
+    return LastResultsVector;
   }
 
   void DQNCoreImpl::update(const State &S,
@@ -136,7 +139,11 @@ namespace wazuhl {
   void DQNCoreImpl::addToExperience(const State &S,
                                     const Action &A,
                                     Result value) {
-    //TODO: implement experience replay
+    auto Values = calculate(S);
+    auto TakenActionIndex = A.getIndex();
+    Values[TakenActionIndex] = value;
+
+    Experience.addToExperience({S, Values});
   }
 
   void DQNCoreImpl::experienceUpdate() {
