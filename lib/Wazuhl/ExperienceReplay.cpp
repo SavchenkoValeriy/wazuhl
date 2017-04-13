@@ -16,6 +16,7 @@ using bsoncxx::builder::stream::open_document;
 namespace {
   using ExperienceUnit = llvm::wazuhl::ExperienceReplay::ExperienceUnit;
   using RecalledExperience = llvm::wazuhl::ExperienceReplay::RecalledExperience;
+  using MongifiedExperience = bsoncxx::document::value;
 
   mongocxx::instance instance{};
 }
@@ -37,6 +38,7 @@ namespace wazuhl {
     void initialize();
     void createCollection(mongocxx::collection &collection, const std::string &name);
 
+    mongocxx::client MongoClient{mongocxx::uri{}};
     mongocxx::database ExternalMemory;
     mongocxx::collection ApprovedRecords;
     mongocxx::collection RecordsWaitingForApproval;
@@ -59,29 +61,50 @@ namespace wazuhl {
   }
 
   void ExperienceReplayImpl::initialize() {
-    mongocxx::client client{mongocxx::uri{}};
-    ExternalMemory = client["wazuhl"];
+    ExternalMemory = MongoClient["wazuhl"];
     createCollection(ApprovedRecords, "approved");
     createCollection(RecordsWaitingForApproval, "waiting");
   }
 
   void ExperienceReplayImpl::createCollection(mongocxx::collection &collection,
                                               const std::string &name) {
-    if (ExternalMemory.has_collection(name)) return; //nothing to do here
+    if (!ExternalMemory.has_collection(name)) {
+      // Experience replay should be renewable
+      // it means that old records must not be in use
+      // Mongo 'max' option for collections does exactly what we want:
+      // when max is reached, old records are deleted
+      auto createCollectionCommand = document{}
+          << "create" << name
+          << "capped" << true     // collection with 'max' is capped
+          << "size" << 4294967296 // capped collection should have 'size' attribute
+                                  // we limit it to 4GB
+          << "max" << 1000 << finalize;
+      // TODO: move constants to config
 
-    // Experience replay should be renewable
-    // it means that old records must not be in use
-    // Mongo max option for collections does exactly what we want:
-    // when max is reached, old records are deleted
-    auto collectionOptions = mongocxx::options::create_collection().
-                                                capped(true).
-                                                size(4294967296).
-                                                max(1000);
-    collection = ExternalMemory.create_collection(name, collectionOptions);
+      ExternalMemory.run_command(std::move(createCollectionCommand));
+    }
+    collection = ExternalMemory.collection(name);
   }
 
   void ExperienceReplayImpl::addToExperience(ExperienceUnit toRemember) {
+    auto ExperienceRecord = document{};
 
+    const auto &State = toRemember.first;
+    const auto &Values = toRemember.second;
+
+    auto array = ExperienceRecord << "state" << open_array;
+    for (auto feature : State) {
+      array = array << feature;
+    }
+    array << close_array;
+
+    array = ExperienceRecord << "values" << open_array;
+    for (auto value : Values) {
+      array = array << value;
+    }
+    array << close_array;
+
+    ApprovedRecords.insert_one(ExperienceRecord.view());
   }
 
   RecalledExperience ExperienceReplayImpl::replay() {
