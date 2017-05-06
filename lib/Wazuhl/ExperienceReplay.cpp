@@ -12,6 +12,8 @@ using bsoncxx::builder::stream::document;
 using bsoncxx::builder::stream::finalize;
 using bsoncxx::builder::stream::open_array;
 using bsoncxx::builder::stream::open_document;
+using bsoncxx::document::view;
+using mongocxx::pipeline;
 
 namespace {
   using ExperienceUnit = llvm::wazuhl::ExperienceReplay::ExperienceUnit;
@@ -19,6 +21,26 @@ namespace {
   using MongifiedExperience = bsoncxx::document::value;
 
   mongocxx::instance instance{};
+
+  template <class IterableT>
+  void addArray(document &Destination,
+                const llvm::StringRef ArrayName, const IterableT &List) {
+    auto array = Destination << ArrayName << open_array;
+    for (auto element : List) {
+      array = array << element;
+    }
+    array << close_array;
+  }
+
+  template <class IterableT>
+  void fillArray(IterableT &List,
+                 const llvm::StringRef ArrayName, view &DocumentView) {
+    auto element = DocumentView[ArrayName.str()];
+    bsoncxx::array::view array = element.get_array();
+    for (auto value : array) {
+      List.push_back(value.get_double());
+    }
+  }
 }
 
 namespace llvm {
@@ -70,7 +92,7 @@ namespace wazuhl {
                                               const std::string &name) {
     if (!ExternalMemory.has_collection(name)) {
       // Experience replay should be renewable
-      // it means that old records must not be in use
+      // it means that old records must not be in use.
       // Mongo 'max' option for collections does exactly what we want:
       // when max is reached, old records are deleted
       auto createCollectionCommand = document{}
@@ -81,6 +103,9 @@ namespace wazuhl {
           << "max" << 1000 << finalize;
       // TODO: move constants to config
 
+      // collection is created by a 'document' command and not by
+      // 'create_collection' function because its' 'size' parameter is restricted
+      // to int values
       ExternalMemory.run_command(std::move(createCollectionCommand));
     }
     collection = ExternalMemory.collection(name);
@@ -92,24 +117,31 @@ namespace wazuhl {
     const auto &State = toRemember.first;
     const auto &Values = toRemember.second;
 
-    auto array = ExperienceRecord << "state" << open_array;
-    for (auto feature : State) {
-      array = array << feature;
-    }
-    array << close_array;
-
-    array = ExperienceRecord << "values" << open_array;
-    for (auto value : Values) {
-      array = array << value;
-    }
-    array << close_array;
+    addArray(ExperienceRecord, "state", State);
+    addArray(ExperienceRecord, "values", Values);
 
     ApprovedRecords.insert_one(ExperienceRecord.view());
   }
 
   RecalledExperience ExperienceReplayImpl::replay() {
-    return {};
-  }
+    using StateType = ExperienceUnit::first_type;
+    using ValuesType = ExperienceUnit::second_type;
 
+    auto SampleQuery = pipeline{};
+    // TODO: get minibatch size from config
+    SampleQuery.sample(5);
+
+    auto Cursor = ApprovedRecords.aggregate(SampleQuery);
+    RecalledExperience Result;
+    for (auto doc : Cursor) {
+      StateType state;
+      fillArray(state, "state", doc);
+      ValuesType values;
+      fillArray(values, "values", doc);
+      Result.push_back({state, values});
+    }
+
+    return Result;
+  }
 }
 }

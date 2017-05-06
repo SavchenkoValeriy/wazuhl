@@ -147,6 +147,7 @@ namespace wazuhl {
   }
 
   void DQNCoreImpl::experienceUpdate() {
+    Experience.replay();
     //TODO: implement experience replay
     // Solver->Step(1);
   }
