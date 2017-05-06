@@ -56,6 +56,8 @@ namespace wazuhl {
     inline void initializeInputs();
     inline void initializeOutputs();
 
+    inline void lazyInitializeExperience();
+
     inline void loadTrainedNet();
     inline void saveTrainedNet();
 
@@ -71,6 +73,7 @@ namespace wazuhl {
     using SolverTy = std::unique_ptr<caffe::Solver<Result> >;
     using InputLayer = caffe::MemoryDataLayer<Result>;
     using InputLayerS = boost::shared_ptr<InputLayer>;
+    using ExperienceReplayPtr = std::unique_ptr<ExperienceReplay>;
 
     // learning net is shared with the solver
     NetS LearningNet;
@@ -84,7 +87,8 @@ namespace wazuhl {
     mutable State LastState;
     mutable ResultsVector LastResultsVector;
 
-    ExperienceReplay Experience;
+    // experience is needed only for learning
+    ExperienceReplayPtr Experience = nullptr;
   };
 
 
@@ -113,7 +117,9 @@ namespace wazuhl {
 
   void DQNCoreImpl::update(const State &S,
                            const Action &A, Result value) {
-    // TODO: implement the following steps
+    // Connect to experience database only if we're trying to
+    // use experience (remember or recall)
+    lazyInitializeExperience();
     // 1. add (S, A, value) to experience replay
     addToExperience(S, A, value);
     // 2. randomly pick a minibatch of triplets (S, A, value)
@@ -141,18 +147,18 @@ namespace wazuhl {
     auto TakenActionIndex = A.getIndex();
     Values[TakenActionIndex] = value;
 
-    Experience.addToExperience({S, Values});
+    Experience->addToExperience({S, Values});
   }
 
   void DQNCoreImpl::experienceUpdate() {
-    Experience.replay();
+    Experience->replay();
     //TODO: implement experience replay
     // Solver->Step(1);
   }
 
   inline void DQNCoreImpl::initialize() {
     caffe::Caffe::set_mode(caffe::Caffe::CPU);
-    google::SetStderrLogging( google::NUM_SEVERITIES );
+    google::SetStderrLogging(google::NUM_SEVERITIES);
     initializeSolver();
     initializeNets();
     initializeInputs();
@@ -192,6 +198,11 @@ namespace wazuhl {
 
   inline void DQNCoreImpl::initializeOutputs() {
     Output = CalculatingNet->blob_by_name("Q_values");
+  }
+
+  inline void DQNCoreImpl::lazyInitializeExperience() {
+    if (Experience.get()) return;
+    Experience = llvm::make_unique<ExperienceReplay>();
   }
 
   inline void DQNCoreImpl::loadTrainedNet() {
