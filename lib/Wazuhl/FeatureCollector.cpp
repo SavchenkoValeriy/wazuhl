@@ -6,6 +6,7 @@
 
 using namespace llvm;
 using namespace wazuhl;
+using namespace wazuhl::config;
 
 #define DEBUG_TYPE "wazuhl-feature-collector"
 

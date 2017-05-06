@@ -9,8 +9,8 @@ layer {
   }
   memory_data_param 
   {
-    batch_size: 32 
-    channels: 65
+    batch_size: ${MINIBATCH_SIZE}
+    channels: ${NUMBER_OF_FEATURES}
     height: 1
     width: 1
   }
@@ -26,7 +26,7 @@ layer {
   memory_data_param 
   {
     batch_size: 1
-    channels: 65
+    channels: ${NUMBER_OF_FEATURES}
     height: 1
     width: 1
   }
@@ -37,7 +37,7 @@ layer {
   bottom: "data"
   top: "ip1"
   inner_product_param {
-    num_output: 108
+    num_output: ${NUMBER_OF_ACTIONS}
     weight_filler {
       type: "xavier"
     }
@@ -65,10 +65,10 @@ layer {
   }
   memory_data_param 
   {
-    batch_size: 32 
+    batch_size: ${MINIBATCH_SIZE}
     channels: 1 
     height: 1
-    width: 108
+    width: ${NUMBER_OF_ACTIONS}
   }
 }
 layer {

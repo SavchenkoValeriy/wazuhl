@@ -1,17 +1,13 @@
 #ifndef LLVM_WAZUHL_FEATURECOLLECTOR_H
 #define LLVM_WAZUHL_FEATURECOLLECTOR_H
 
+#include "llvm/Wazuhl/Config.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/ADT/SmallVector.h"
 
 namespace llvm {
 namespace wazuhl {
-#define LAST_OTHER_INST(num) \
-  constexpr int NumberOfOpcodes = num;
-#include "llvm/IR/Instruction.def"
-  constexpr int TimerIndex = NumberOfOpcodes + 1;
-  constexpr int NumberOfFeatures = NumberOfOpcodes + 2;
-  using FeatureVector = SmallVector<double, NumberOfFeatures>;
+  using FeatureVector = SmallVector<double, config::NumberOfFeatures>;
 
   class FunctionFeatureCollector
     : public AnalysisInfoMixin<FunctionFeatureCollector> {

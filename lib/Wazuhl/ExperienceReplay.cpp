@@ -100,7 +100,7 @@ namespace wazuhl {
           << "capped" << true     // collection with 'max' is capped
           << "size" << 4294967296 // capped collection should have 'size' attribute
                                   // we limit it to 4GB
-          << "max" << 1000 << finalize;
+          << "max" << config::ExperienceSize << finalize;
       // TODO: move constants to config
 
       // collection is created by a 'document' command and not by
@@ -129,7 +129,7 @@ namespace wazuhl {
 
     auto SampleQuery = pipeline{};
     // TODO: get minibatch size from config
-    SampleQuery.sample(5);
+    SampleQuery.sample(config::MinibatchSize);
 
     auto Cursor = ApprovedRecords.aggregate(SampleQuery);
     RecalledExperience Result;

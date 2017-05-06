@@ -1,0 +1,27 @@
+#ifndef LLVM_WAZUHL_CONFIG_H
+#define LLVM_WAZUHL_CONFIG_H
+
+#include "llvm/ADT/StringRef.h"
+
+namespace llvm {
+namespace wazuhl {
+namespace config {
+
+  StringRef getCaffeModelPath();
+  StringRef getCaffeSolverPath();
+  StringRef getWazuhlConfigPath();
+  StringRef getTrainedNetFile();
+
+  constexpr unsigned MinibatchSize = ${MINIBATCH_SIZE},
+ #define LAST_OTHER_INST(num)                    \
+    NumberOfOpcodes = num,
+#include "llvm/IR/Instruction.def"
+    TimerIndex = NumberOfOpcodes + 1,
+    NumberOfFeatures = ${NUMBER_OF_FEATURES},
+    NumberOfActions = ${NUMBER_OF_ACTIONS};
+  constexpr auto ExperienceSize = ${EXPERIENCE_SIZE};
+}
+}
+}
+
+#endif /* LLVM_WAZUHL_CONFIG_H */

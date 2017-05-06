@@ -5,6 +5,7 @@ pkg_check_modules(LIBBSONXX REQUIRED libbsoncxx)
 pkg_check_modules(LIBMONGOCXX REQUIRED libmongocxx)
 
 include_directories(
+  SYSTEM
   ${LLVM_MAIN_SRC_DIR}/lib/Passes
   ${Caffe_INCLUDE_DIRS}
   ${LIBMONGOCXX_INCLUDE_DIRS}
@@ -41,12 +42,26 @@ add_llvm_library(LLVMWazuhl
   ${LIBBSONCXX_LIBRARIES}
   )
 
+set(MINIBATCH_SIZE 32)
+set(EXPERIENCE_SIZE 1000)
+set(NUMBER_OF_FEATURES 65)
+set(NUMBER_OF_ACTIONS 108)
+
+configure_file(
+  ${LLVM_MAIN_INCLUDE_DIR}/llvm/Wazuhl/Config.h.in
+  ${LLVM_INCLUDE_DIR}/llvm/Wazuhl/Config.h
+  )
+configure_file(
+  ${CMAKE_CURRENT_SOURCE_DIR}/model.prototxt.in
+  ${CMAKE_CURRENT_BINARY_DIR}/model.prototxt
+  )
+
 set_property(TARGET LLVMWazuhl APPEND_STRING PROPERTY
   COMPILE_FLAGS " -fexceptions")
 
 install(
   FILES
-  model.prototxt
+  ${CMAKE_CURRENT_BINARY_DIR}/model.prototxt
   solver.prototxt
   DESTINATION wazuhl
   )

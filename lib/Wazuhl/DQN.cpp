@@ -36,9 +36,7 @@ namespace wazuhl {
   using State         = DQNCore::State;
   using ResultsVector = DQNCore::ResultsVector;
 
-  // TODO: Make a unified place for this
-  constexpr unsigned MinibatchSize = 32;
-  llvm::SmallVector<Result, MinibatchSize> TrainDummy(MinibatchSize);
+  llvm::SmallVector<Result, config::MinibatchSize> TrainDummy(config::MinibatchSize);
   llvm::SmallVector<Result, 1> TestDummy(1);
 
   class DQNCoreImpl {

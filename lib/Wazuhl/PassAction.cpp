@@ -1,4 +1,5 @@
 #include "llvm/Wazuhl/PassAction.h"
+#include "llvm/Wazuhl/Config.h"
 
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/AliasAnalysisEvaluator.h"
@@ -126,6 +127,8 @@
 #include "llvm/Transforms/Vectorize/LoopVectorize.h"
 #include "llvm/Transforms/Vectorize/SLPVectorizer.h"
 
+#include <cassert>
+
 using namespace llvm;
 using namespace wazuhl;
 
@@ -204,6 +207,7 @@ namespace {
                         });
     PassActionList Result = {FilteredListOfActions.begin(), FilteredListOfActions.end()};
     assignIndices(Result);
+    assert(Result.size() == config::NumberOfActions & "Expected number of action differs from actual!");
     return Result;
   }
 
