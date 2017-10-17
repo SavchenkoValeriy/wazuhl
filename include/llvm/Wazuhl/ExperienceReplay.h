@@ -11,18 +11,19 @@ namespace llvm { namespace wazuhl {
 
   class ExperienceReplay {
   public:
-    static constexpr unsigned int MinibatchSize = 32;
-
     ExperienceReplay();
     ~ExperienceReplay();
 
     using ExperienceUnit = std::pair<DQNCore::State,
                                      DQNCore::ResultsVector>;
+    using State = DQNCore::State;
     using RecalledExperience = SmallVector<ExperienceUnit,
                                            MinibatchSize>;
 
     void addToExperience(ExperienceUnit);
+    void addToExperience(State terminal);
     RecalledExperience replay();
+
 
   private:
     std::unique_ptr<ExperienceReplayImpl> pImpl;

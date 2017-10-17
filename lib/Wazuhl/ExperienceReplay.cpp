@@ -17,6 +17,7 @@ using mongocxx::pipeline;
 
 namespace {
   using ExperienceUnit = llvm::wazuhl::ExperienceReplay::ExperienceUnit;
+  using StateType = llvm::wazuhl::ExperienceReplay::State;
   using RecalledExperience = llvm::wazuhl::ExperienceReplay::RecalledExperience;
   using MongifiedExperience = bsoncxx::document::value;
 
@@ -54,6 +55,7 @@ namespace wazuhl {
     ExperienceReplayImpl &operator=(ExperienceReplayImpl &&) = delete;
 
     void addToExperience(ExperienceUnit);
+    void addToExperience(StateType);
     RecalledExperience replay();
 
   private:
@@ -72,6 +74,10 @@ namespace wazuhl {
 
   void ExperienceReplay::addToExperience(ExperienceReplay::ExperienceUnit toRemember) {
     pImpl->addToExperience(toRemember);
+  }
+
+  void ExperienceReplay::addToExperience(ExperienceReplay::State terminal) {
+    pImpl->addToExperience(terminal);
   }
 
   ExperienceReplay::RecalledExperience ExperienceReplay::replay() {
@@ -123,16 +129,31 @@ namespace wazuhl {
     ApprovedRecords.insert_one(ExperienceRecord.view());
   }
 
+  void ExperienceReplayImpl::addToExperience(StateType terminal) {
+    auto UnapprovedExperience = document{};
+
+    addArray(UnapprovedExperience, "state", terminal);
+
+    RecordsWaitingForApproval.insert_one(UnapprovedExperience.view());
+  }
+
   RecalledExperience ExperienceReplayImpl::replay() {
     using StateType = ExperienceUnit::first_type;
     using ValuesType = ExperienceUnit::second_type;
 
+    RecalledExperience Result;
+    // Wazuhl doesn't have enough experience to even start
+    // learning process
+    llvm::errs() << "Wazuhl's checking for experience\n";
+    if (ApprovedRecords.count({}) < config::MinibatchSize)
+      return Result;
+
+    // Randomly choose MinibatchSize number of experience entries
+    llvm::errs() << "There is some experience for Wazuhl to learn from\n";
     auto SampleQuery = pipeline{};
-    // TODO: get minibatch size from config
     SampleQuery.sample(config::MinibatchSize);
 
     auto Cursor = ApprovedRecords.aggregate(SampleQuery);
-    RecalledExperience Result;
     for (auto doc : Cursor) {
       StateType state;
       fillArray(state, "state", doc);
