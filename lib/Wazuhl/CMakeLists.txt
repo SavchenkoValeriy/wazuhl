@@ -1,8 +1,10 @@
 find_package(Caffe REQUIRED CONFIG)
 
-find_package(PkgConfig)
-pkg_check_modules(LIBBSONXX REQUIRED libbsoncxx)
-pkg_check_modules(LIBMONGOCXX REQUIRED libmongocxx)
+find_package(libmongocxx REQUIRED)
+find_package(libbsoncxx REQUIRED)
+#find_package(PkgConfig)
+#pkg_check_modules(LIBBSONXX REQUIRED libbsoncxx)
+#pkg_check_modules(LIBMONGOCXX REQUIRED libmongocxx)
 
 include_directories(
   SYSTEM
