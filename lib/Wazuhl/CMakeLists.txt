@@ -6,6 +6,9 @@ find_package(libbsoncxx REQUIRED)
 #pkg_check_modules(LIBBSONXX REQUIRED libbsoncxx)
 #pkg_check_modules(LIBMONGOCXX REQUIRED libmongocxx)
 
+get_target_property(Caffe_INCLUDE_DIRS caffe INTERFACE_INCLUDE_DIRECTORIES)
+get_target_property(Caffe_DEFINITIONS caffe INTERFACE_COMPILE_DEFINITIONS)
+
 include_directories(
   SYSTEM
   ${LLVM_MAIN_SRC_DIR}/lib/Passes
@@ -20,7 +23,6 @@ link_directories(
   )
 
 add_definitions(
-  ${Caffe_DEFINITIONS}
   -DGOOGLE_PROTOBUF_NO_RTTI
   -DBOOST_NO_EXCEPTIONS
   -DBOOST_NO_RTTI
@@ -60,6 +62,9 @@ configure_file(
 
 set_property(TARGET LLVMWazuhl APPEND_STRING PROPERTY
   COMPILE_FLAGS " -fexceptions")
+
+target_compile_definitions(LLVMWazuhl
+  PRIVATE ${Caffe_DEFINITIONS})
 
 install(
   FILES
