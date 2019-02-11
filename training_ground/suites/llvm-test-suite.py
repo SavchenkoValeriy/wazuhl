@@ -63,7 +63,7 @@ class Suite:
 
     def go_to_builddir(self):
         os.chdir(self.build)
-        logging.debug(self.build, " is a build dir")
+        logging.debug(self.build + " is a build dir")
 
 
 class Test:

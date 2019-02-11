@@ -12,7 +12,7 @@ def parse():
                       type='string',
                       action='store',
                       dest='output',
-                      default='train.out',
+                      default='suites',
                       help='Directory to store training files')
 
     (options, args) = parser.parse_args()

@@ -64,6 +64,13 @@ tools/avrlit
 docs/_build
 # VSCode config files.
 .vscode
+# Mongo db.
+mongo-c-driver-1.13.0/*
+mongo-cxx-driver/*
+# Caffe.
+caffe/*
+# LLVM test suite.
+suites/*
 
 build/
 .dir-locals.el

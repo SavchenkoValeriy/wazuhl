@@ -1,0 +1,7 @@
+training-ground:
+  build: .
+  dockerfile: Dockerfile
+  ports:
+    - '8084:8080'
+  environment:
+    LD_LIBRARY_PATH: "/usr/local/lib/:/caffe/build/lib/:"
