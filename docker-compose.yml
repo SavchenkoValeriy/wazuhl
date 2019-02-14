@@ -1,11 +1,24 @@
-training-ground:
-  build: .
-  dockerfile: Dockerfile
-  volumes:
-    - ./:/wazuhl
-    - ./docker-build:/wazuhl-build
-    - ./suites:/suites
-  ports:
-    - '8084:8080'
-  environment:
-    LD_LIBRARY_PATH: "/usr/local/lib/:/caffe/build/lib/:"
+---
+version: '3'
+services:
+  training-ground:
+    build: .
+    container_name: training-ground
+    volumes:
+      - ./:/wazuhl
+      - ./docker-build:/wazuhl-build
+      - ./suites:/suites
+    ports:
+      - '8084:8080'
+    environment:
+      LD_LIBRARY_PATH: "/usr/local/lib/:/caffe/build/lib/:"
+    depends_on: ['mongo']
+    networks: ['gym']
+
+  mongo:
+    image: mongo
+    container_name: mongo
+    restart: always
+    networks: ['gym']
+
+networks: {gym: {}}

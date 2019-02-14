@@ -4,15 +4,15 @@ import subprocess
 import pprint
 import os
 import shutil
+import logging
 
 from src import config
 from src import utils
 
 class Experience:
     def __init__(self):
-        self.mongo = Process(target=Experience.__start_mongo_server__, args=())
-        self.mongo.start()
-        self.client = MongoClient()
+        logging.info("Connecting to 'mongo' for experience")
+        self.client = MongoClient('mongo')
         self.db = self.client["wazuhl"]
         self.approved = self.db["approved"]
         self.waiting = self.db["waiting"]

@@ -5,6 +5,7 @@ import os
 from src import config
 from src import testrunner
 from src import utils
+from src import experience
 
 
 class Reinforcer:
@@ -12,7 +13,7 @@ class Reinforcer:
         self.suites = suites
         self.alpha = config.get_alpha()
         self.tests = []
-
+        self.experience = experience.Experience()
         self.baselines = {"compile_time": {}, "execution_time": {}}
 
     def measure_baseline(self, flags, rerun=False):
@@ -33,7 +34,8 @@ class Reinforcer:
 
             self.__cache__(self.baselines, cache_file)
         logging.info("Baselines measured")
-        nones = [p for p in self.baselines["compile_time"] if self.baselines["compile_time"][p] is None]
+        nones = [p for p in self.baselines["compile_time"]
+                 if self.baselines["compile_time"][p] is None]
         logging.info(nones)
         assert None not in self.baselines["compile_time"].values(), "None in test"
 
@@ -53,7 +55,8 @@ class Reinforcer:
         tests = testrunner.get_tests(self.suites, '-OW -ftrain-wazuhl')
         logging.info("Got tests")
         logging.info("Before check, {} tests".format(len(tests)))
-        tests = [test for test in tests if str(test) in self.baselines["compile_time"].keys()]
+        tests = [test for test in tests
+                 if str(test) in self.baselines["compile_time"].keys()]
         self.__check__(tests)
         logging.info("Checked tests")
 
@@ -67,7 +70,7 @@ class Reinforcer:
         logging.info(len(tests))
         compilation_tests = set(self.baselines["compile_time"].keys())
         execution_tests = set(self.baselines["execution_time"].keys())
-        message = "Ethalon tests ({0}) differ from the ones for Wazuhl!"
+        message = "Etalon tests ({0}) differ from the ones for Wazuhl!"
         if tests != compilation_tests:
             utils.error(message.format("compilation"))
         if tests != execution_tests:
