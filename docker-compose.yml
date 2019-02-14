@@ -1,6 +1,10 @@
 training-ground:
   build: .
   dockerfile: Dockerfile
+  volumes:
+    - ./:/wazuhl
+    - ./docker-build:/wazuhl-build
+    - ./suites:/suites
   ports:
     - '8084:8080'
   environment:
