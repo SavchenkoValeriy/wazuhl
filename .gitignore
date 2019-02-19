@@ -72,8 +72,10 @@ caffe/*
 # LLVM test suite.
 suites/*
 
+docker-build/
 build/
 .dir-locals.el
+.idea/
 
 #==============================================================================#
 # Files created in tree by the Go bindings.

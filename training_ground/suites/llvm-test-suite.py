@@ -22,7 +22,7 @@ class Suite:
 
     def configure(self, CC, CXX, COPTS, CXXOPTS):
         output = config.get_output()
-
+        logging.info("Run configure with options: CC {}, CXX {}, COPTS {}, CXXOPTS {}".format(CC, CXX, COPTS, CXXOPTS))
         if os.path.exists(self.build):
             shutil.rmtree(self.build)
         os.makedirs(self.build)
@@ -32,14 +32,13 @@ class Suite:
         self.configuration_env['CXX'] = CXX
         self.configuration_env['LD_LIBRARY_PATH'] = self.caffe
 
-        if CXXOPTS.find("-OW") != -1:
-            self.fake_run = True
-            logging.info("Fake run for Wazuhl tests")
-
         make_command = ['cmake', self.suite,
                         '-DCMAKE_BUILD_TYPE=Release',
                         '-DCMAKE_C_FLAGS_RELEASE={0}'.format(COPTS),
                         '-DCMAKE_CXX_FLAGS_RELEASE={0}'.format(CXXOPTS)]
+        logging.info(make_command)
+        logging.info(COPTS)
+        logging.info(CXXOPTS)
         logging.info(make_command)
         with open(os.devnull, 'wb') as devnull:
             cmake_output = subprocess.Popen(make_command, env=self.configuration_env, stdout=subprocess.PIPE)
@@ -84,13 +83,12 @@ class Test:
         self.suite.go_to_builddir()
         with open(os.devnull, 'wb') as devnull:
             make_command = ['make', '-j2', self.name]
-            logging.info(make_command)
+            logging.debug(make_command)
             make_output = subprocess.run(make_command,  env=self.suite.configuration_env,
                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             logging.debug("reading output")
             out = make_output.stdout.decode('utf-8')
-
-            print(out)
+            logging.debug(out)
 
     def run(self):
         if self.suite.fake_run:
@@ -98,6 +96,7 @@ class Test:
             return
         test_run = subprocess.Popen(['lit', self.path], stdout=subprocess.PIPE)
         output = test_run.stdout.read().decode('utf-8')
+        logging.debug(output)
         compile_pattern = r'compile_time: (.*)'
         execution_pattern = r'exec_time: (.*)'
         compile_time = re.search(compile_pattern, output)

@@ -27,6 +27,8 @@ namespace wazuhl {
     State Current;
     PreservedAnalyses PA;
     bool Terminated = false;
+    size_t nTakenActions = 0;
+    static constexpr size_t maxAllowedActions = 100;
   };
 }
 }

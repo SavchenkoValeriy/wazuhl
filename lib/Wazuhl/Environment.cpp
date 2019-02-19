@@ -39,7 +39,11 @@ namespace wazuhl {
 
   void Environment::takeAction(const Action &A) {
     llvm::errs() << "Wazuhl is taking action " << A.getName() << "\n";
-
+    ++nTakenActions;
+    // terminate actions taking if MaxAllowedActions already taken
+    if (nTakenActions == maxAllowedActions){
+      Terminated = true;
+    }
     auto Pass = A.takeAction();
     // if pass to run is not there,
     // it is a terminal action and no passes to be ran
