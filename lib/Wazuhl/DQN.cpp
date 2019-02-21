@@ -144,7 +144,7 @@ void DQNCoreImpl::addToExperience(const State &S, const Action &A,
   auto TakenActionIndex = A.getIndex();
   Values[TakenActionIndex] = value;
 
-  Experience->addToExperience({S, Values});
+  Experience->addToExperience({S, Values}, TakenActionIndex);
 }
 
 void DQNCoreImpl::experienceUpdate() {

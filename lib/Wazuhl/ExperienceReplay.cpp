@@ -54,8 +54,9 @@ public:
   ExperienceReplayImpl &operator=(const ExperienceReplayImpl &) = delete;
   ExperienceReplayImpl &operator=(ExperienceReplayImpl &&) = delete;
 
-  void addToExperience(ExperienceUnit);
-  void addToExperience(StateType);
+  ~ExperienceReplayImpl();
+
+  void addToExperience(ExperienceUnit, unsigned index);
   RecalledExperience replay();
 
 private:
@@ -63,10 +64,17 @@ private:
   void createCollection(mongocxx::collection &collection,
                         const std::string &name);
 
+  void uploadApprovedExperience();
+  void uploadExperienceWaitingForApproval();
+
   mongocxx::client MongoClient{mongocxx::uri{"mongodb://mongo:27017"}};
   mongocxx::database ExternalMemory;
   mongocxx::collection ApprovedRecords;
   mongocxx::collection RecordsWaitingForApproval;
+
+  // it should be at least one action taken (terminal)
+  ExperienceUnit LastExperience;
+  unsigned IndexOfTheLastTakenAction;
 };
 
 ExperienceReplay::ExperienceReplay()
@@ -74,12 +82,8 @@ ExperienceReplay::ExperienceReplay()
 ExperienceReplay::~ExperienceReplay() = default;
 
 void ExperienceReplay::addToExperience(
-    ExperienceReplay::ExperienceUnit toRemember) {
-  pImpl->addToExperience(toRemember);
-}
-
-void ExperienceReplay::addToExperience(ExperienceReplay::State terminal) {
-  pImpl->addToExperience(terminal);
+    ExperienceReplay::ExperienceUnit toRemember, unsigned index) {
+  pImpl->addToExperience(toRemember, index);
 }
 
 ExperienceReplay::RecalledExperience ExperienceReplay::replay() {
@@ -118,11 +122,22 @@ void ExperienceReplayImpl::createCollection(mongocxx::collection &collection,
   collection = ExternalMemory.collection(name);
 }
 
-void ExperienceReplayImpl::addToExperience(ExperienceUnit toRemember) {
-  auto ExperienceRecord = document{};
+void ExperienceReplayImpl::addToExperience(ExperienceUnit toRemember,
+                                           unsigned index) {
+  uploadApprovedExperience();
+  LastExperience = toRemember;
+  IndexOfTheLastTakenAction = index;
+}
 
-  const auto &State = toRemember.first;
-  const auto &Values = toRemember.second;
+void ExperienceReplayImpl::uploadApprovedExperience() {
+  const auto &State = LastExperience.first;
+  const auto &Values = LastExperience.second;
+
+  if (State.empty() or Values.empty()) {
+    return;
+  }
+
+  auto ExperienceRecord = document{};
 
   addArray(ExperienceRecord, "state", State);
   addArray(ExperienceRecord, "values", Values);
@@ -130,12 +145,27 @@ void ExperienceReplayImpl::addToExperience(ExperienceUnit toRemember) {
   ApprovedRecords.insert_one(ExperienceRecord.view());
 }
 
-void ExperienceReplayImpl::addToExperience(StateType terminal) {
-  auto UnapprovedExperience = document{};
+void ExperienceReplayImpl::uploadExperienceWaitingForApproval() {
+  llvm::errs() << "Wazuhl tries to memorize his last experience\n";
+  const auto &State = LastExperience.first;
+  const auto &Values = LastExperience.second;
 
-  addArray(UnapprovedExperience, "state", terminal);
+  if (State.empty() or Values.empty()) {
+    llvm::errs() << "Wazuhl doesn't have good experience :(\n";
+    return;
+  }
 
-  RecordsWaitingForApproval.insert_one(UnapprovedExperience.view());
+  auto ExperienceRecord = document{};
+
+  addArray(ExperienceRecord, "state", State);
+  addArray(ExperienceRecord, "values", Values);
+  ExperienceRecord << "index" << (int)IndexOfTheLastTakenAction;
+
+  RecordsWaitingForApproval.insert_one(ExperienceRecord.view());
+}
+
+ExperienceReplayImpl::~ExperienceReplayImpl() {
+  uploadExperienceWaitingForApproval();
 }
 
 RecalledExperience ExperienceReplayImpl::replay() {
@@ -146,7 +176,7 @@ RecalledExperience ExperienceReplayImpl::replay() {
   // Wazuhl doesn't have enough experience to even start
   // the learning process
   llvm::errs() << "Wazuhl's checking for experience\n";
-  constexpr auto MinimalSizeForDB = 100;
+  constexpr unsigned MinimalSizeForDB = 100;
   if (ApprovedRecords.count({}) <
       std::max(MinimalSizeForDB, config::MinibatchSize))
     return Result;
