@@ -22,6 +22,7 @@ class Reinforcer:
         logging.info(cache_file)
         self.baselines = self.__load_cache__(cache_file)
         if not self.baselines or rerun:
+            logging.info("Measuring baseline from scratch")
             self.baselines = {"compile_time": {}, "execution_time": {}}
             self.tests = testrunner.get_tests(self.suites, flags)
             self.tests = testrunner.run(self.tests)
@@ -52,7 +53,7 @@ class Reinforcer:
 
     def run(self):
         logging.info("Reinforcer running. Getting tests")
-        tests = testrunner.get_tests(self.suites, 'OWrun')
+        tests = testrunner.get_tests(self.suites, 'OWtrain')
         logging.info("Got tests")
         logging.info("Before check, {} tests".format(len(tests)))
         tests = [test for test in tests
@@ -83,11 +84,15 @@ class Reinforcer:
 
     def __load_cache__(self, cache_file):
         if not os.path.exists(cache_file):
+            logging.info("Couldn't find file {0}".format(cache_file))
             return None
         with open(cache_file, 'rb') as cache:
             return pickle.load(cache)
 
     @staticmethod
     def __etalon_file__(name, flags):
-        return os.path.join(config.get_output(),
+        result = os.path.join(config.get_output(),
                             "{0}.{1}.etalon".format(name, utils.pathify(flags)))
+        logging.info("Etalon file for '{0}' lives at '{1}'".
+                     format(flags, result))
+        return result
