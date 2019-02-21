@@ -146,7 +146,9 @@ RecalledExperience ExperienceReplayImpl::replay() {
   // Wazuhl doesn't have enough experience to even start
   // the learning process
   llvm::errs() << "Wazuhl's checking for experience\n";
-  if (ApprovedRecords.count({}) < config::MinibatchSize)
+  constexpr auto MinimalSizeForDB = 100;
+  if (ApprovedRecords.count({}) <
+      std::max(MinimalSizeForDB, config::MinibatchSize))
     return Result;
 
   // Randomly choose MinibatchSize number of experience entries
