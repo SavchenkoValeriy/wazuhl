@@ -64,7 +64,9 @@ class Reinforcer:
         while True:
             logging.info("Run random")
             result = testrunner.run_random(tests)
-            print("Result: ", self.calculate_reward(result))
+            reward = self.calculate_reward(result)
+            logging.info("Reward: %s", reward)
+            self.experience.approve(reward)
 
     def __check__(self, tests):
         tests = set(map(str, tests))
