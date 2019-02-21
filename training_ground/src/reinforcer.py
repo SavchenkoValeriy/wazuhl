@@ -52,8 +52,7 @@ class Reinforcer:
 
     def run(self):
         logging.info("Reinforcer running. Getting tests")
-        # TODO: fix using option -ftrain-wazuhl' on the next line.
-        tests = testrunner.get_tests(self.suites, '-OW') #-ftrain-wazuhl')
+        tests = testrunner.get_tests(self.suites, 'OWrun')
         logging.info("Got tests")
         logging.info("Before check, {} tests".format(len(tests)))
         tests = [test for test in tests

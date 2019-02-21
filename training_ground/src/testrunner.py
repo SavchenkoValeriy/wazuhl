@@ -5,11 +5,12 @@ from tqdm import tqdm
 from src import config
 
 
-def get_tests(suites, flags):
+def get_tests(suites, flag):
     tests = []
     for suite in suites:
         logging.info("Suite: {}".format(suite))
-        suite.configure(config.get_clang(), config.get_clangpp(), flags, flags)
+        option = '-C/wazuhl/training_ground/cmake_configs/{}.cmake'
+        suite.configure(config.get_clang(), config.get_clangpp(), option.format(flag))
         logging.info("Configured suite and preparing to get tests from it")
         tests.extend(suite.get_tests())
         logging.info(len(suite.get_tests()))

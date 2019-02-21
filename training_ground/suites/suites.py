@@ -51,7 +51,7 @@ def check_get_tests(suite):
 
 
 def check_configure(suite):
-    check_method(suite, "configure", 5)
+    check_method(suite, "configure", 4)
 
 
 def check_compile(test):

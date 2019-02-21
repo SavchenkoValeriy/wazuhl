@@ -20,9 +20,8 @@ class Suite:
     def get_tests(self):
         return self.tests
 
-    def configure(self, CC, CXX, COPTS, CXXOPTS):
-        output = config.get_output()
-        logging.info("Run configure with options: CC {}, CXX {}, COPTS {}, CXXOPTS {}".format(CC, CXX, COPTS, CXXOPTS))
+    def configure(self, CC, CXX, OPTS):
+        logging.info("Run configure with options: CC {}, CXX {}, OPTS {}".format(CC, CXX, OPTS))
         if os.path.exists(self.build):
             shutil.rmtree(self.build)
         os.makedirs(self.build)
@@ -34,11 +33,7 @@ class Suite:
 
         make_command = ['cmake', self.suite,
                         '-DCMAKE_BUILD_TYPE=Release',
-                        '-DCMAKE_C_FLAGS_RELEASE={0}'.format(COPTS),
-                        '-DCMAKE_CXX_FLAGS_RELEASE={0}'.format(CXXOPTS)]
-        logging.info(make_command)
-        logging.info(COPTS)
-        logging.info(CXXOPTS)
+                        OPTS]
         logging.info(make_command)
         with open(os.devnull, 'wb') as devnull:
             cmake_output = subprocess.Popen(make_command, env=self.configuration_env, stdout=subprocess.PIPE)
@@ -86,6 +81,7 @@ class Test:
             logging.debug(make_command)
             make_output = subprocess.run(make_command,  env=self.suite.configuration_env,
                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            logging.debug(make_output)
             logging.debug("reading output")
             out = make_output.stdout.decode('utf-8')
             logging.debug(out)
