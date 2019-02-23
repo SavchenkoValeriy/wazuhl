@@ -133,64 +133,70 @@ using namespace llvm;
 using namespace wazuhl;
 
 namespace {
-  // FIXME: this is a hack specifically made for TargetIRAnalysis
-  constexpr llvm::TargetMachine *TM = nullptr;
-  const std::string uselessPrefixes[] = {"profile", "print", "pgo", "dot", "view", "verify", "nary"};
-  const std::string uselessSuffixes[] = {"profile", "profiling", "prof", "import", "consthoist", "loweratomic", "unreachableblockelim", "internalize", "early-cse-memssa"};
+// FIXME: this is a hack specifically made for TargetIRAnalysis
+constexpr llvm::TargetMachine *TM = nullptr;
+const std::string uselessPrefixes[] = {"profile", "print",  "pgo", "dot",
+                                       "view",    "verify", "nary"};
+const std::string uselessSuffixes[] = {"profile",
+                                       "profiling",
+                                       "prof",
+                                       "import",
+                                       "consthoist",
+                                       "loweratomic",
+                                       "unreachableblockelim",
+                                       "internalize",
+                                       "early-cse-memssa",
+                                       "newgvn"};
 
-  inline bool isActionUsefull(const PassAction& a) {
-    auto &ActionName = a.getName();
-    return llvm::none_of(uselessPrefixes, [&ActionName](const std::string &x) {
-        return ActionName.startswith(x);
-      }) &&
-      llvm::none_of(uselessSuffixes, [&ActionName](const std::string &x) {
-        return ActionName.endswith(x);
-      });
+inline bool isActionUsefull(const PassAction &a) {
+  auto &ActionName = a.getName();
+  return llvm::none_of(uselessPrefixes,
+                       [&ActionName](const std::string &x) {
+                         return ActionName.startswith(x);
+                       }) &&
+         llvm::none_of(uselessSuffixes, [&ActionName](const std::string &x) {
+           return ActionName.endswith(x);
+         });
+}
+
+inline void assignIndices(PassActionList &orderedActions) {
+  for (unsigned i = 0; i < orderedActions.size(); ++i) {
+    orderedActions[i].setIndex(i);
   }
+}
 
-  inline void assignIndices(PassActionList &orderedActions) {
-    for (unsigned i = 0; i < orderedActions.size(); ++i) {
-      orderedActions[i].setIndex(i);
-    }
-  }
-
-  PassActionList createAllPossibleActions() {
-    PassActionList EverySinglePossiblePass {
+PassActionList createAllPossibleActions() {
+  PassActionList EverySinglePossiblePass{
 #define ANALYSIS_TO_PASS(CTR, IR_TYPE)                                         \
-      RequireAnalysisPass                                                      \
-          <std::remove_reference<decltype(CTR)>::type, IR_TYPE>()
+  RequireAnalysisPass<std::remove_reference<decltype(CTR)>::type, IR_TYPE>()
 #define MODULE_PASS_OR_ANALYSIS(NAME, CTR)                                     \
-      { NAME,                                                                  \
-        [] {                                                                   \
-          using PassT = decltype(CTR);                                         \
-          using WrapperType = detail::PassModel<Module, PassT,                 \
-                                                PreservedAnalyses,             \
-                                                AnalysisManager<Module>>;      \
-          return new WrapperType(CTR);                                         \
-        }                                                                      \
-      },
+  {NAME, [] {                                                                  \
+     using PassT = decltype(CTR);                                              \
+     using WrapperType = detail::PassModel<Module, PassT, PreservedAnalyses,   \
+                                           AnalysisManager<Module>>;           \
+     return new WrapperType(CTR);                                              \
+   }},
 #define MODULE_PASS(NAME, CREATE_PASS)                                         \
-      MODULE_PASS_OR_ANALYSIS(NAME, CREATE_PASS)
+  MODULE_PASS_OR_ANALYSIS(NAME, CREATE_PASS)
 #define MODULE_ANALYSIS(NAME, CREATE_PASS)                                     \
-      MODULE_PASS_OR_ANALYSIS(NAME, ANALYSIS_TO_PASS(CREATE_PASS, Module))
+  MODULE_PASS_OR_ANALYSIS(NAME, ANALYSIS_TO_PASS(CREATE_PASS, Module))
 #define CGSCC_PASS_OR_ANALYSIS(NAME, CTR)                                      \
-      MODULE_PASS_OR_ANALYSIS(NAME, createModuleToPostOrderCGSCCPassAdaptor(CTR))
-#define CGSCC_PASS(NAME, CREATE_PASS)                                          \
-      CGSCC_PASS_OR_ANALYSIS(NAME, CREATE_PASS)
-//FIXME: Couldn't use the only CG level analysis
-//#define CGSCC_ANALYSIS(NAME, CREATE_PASS)                                      \
-//      CGSCC_PASS_OR_ANALYSIS(NAME, ANALYSIS_TO_PASS(CREATE_PASS, LazyCallGraph::SCC))
+  MODULE_PASS_OR_ANALYSIS(NAME, createModuleToPostOrderCGSCCPassAdaptor(CTR))
+#define CGSCC_PASS(NAME, CREATE_PASS) CGSCC_PASS_OR_ANALYSIS(NAME, CREATE_PASS)
+// FIXME: Couldn't use the only CG level analysis
+//#define CGSCC_ANALYSIS(NAME, CREATE_PASS) \
+//      CGSCC_PASS_OR_ANALYSIS(NAME, ANALYSIS_TO_PASS(CREATE_PASS,
+//      LazyCallGraph::SCC))
 #define FUNCTION_PASS_OR_ANALYSIS(NAME, CTR)                                   \
-      MODULE_PASS_OR_ANALYSIS(NAME, createModuleToFunctionPassAdaptor(CTR))
+  MODULE_PASS_OR_ANALYSIS(NAME, createModuleToFunctionPassAdaptor(CTR))
 #define FUNCTION_PASS(NAME, CREATE_PASS)                                       \
-      FUNCTION_PASS_OR_ANALYSIS(NAME, CREATE_PASS)
+  FUNCTION_PASS_OR_ANALYSIS(NAME, CREATE_PASS)
 #define FUNCTION_ANALYSIS(NAME, CREATE_PASS)                                   \
-      FUNCTION_PASS_OR_ANALYSIS(NAME, ANALYSIS_TO_PASS(CREATE_PASS, Function))
+  FUNCTION_PASS_OR_ANALYSIS(NAME, ANALYSIS_TO_PASS(CREATE_PASS, Function))
 #define LOOP_PASS_OR_ANALYSIS(NAME, CTR)                                       \
-      FUNCTION_PASS_OR_ANALYSIS(NAME, createFunctionToLoopPassAdaptor(CTR))
-#define LOOP_PASS(NAME, CREATE_PASS)                                           \
-      LOOP_PASS_OR_ANALYSIS(NAME, CREATE_PASS)
-      //#define LOOP_ANALYSIS(NAME, CREATE_PASS)    \
+  FUNCTION_PASS_OR_ANALYSIS(NAME, createFunctionToLoopPassAdaptor(CTR))
+#define LOOP_PASS(NAME, CREATE_PASS) LOOP_PASS_OR_ANALYSIS(NAME, CREATE_PASS)
+  //#define LOOP_ANALYSIS(NAME, CREATE_PASS)    \
       //      LOOP_PASS_OR_ANALYSIS(NAME, CREATE_PASS)
 
 #include "PassRegistry.def"
@@ -199,42 +205,42 @@ namespace {
 #undef FUNCTION_PASS_OR_ANALYSIS
 #undef LOOP_PASS_OR_ANALYSIS
       {"terminal", [] { return nullptr; }} /// this is a terminal action
-    };
-    auto FilteredListOfActions =
+  };
+  auto FilteredListOfActions =
       make_filter_range(EverySinglePossiblePass,
-                        [] (const PassAction &a) {
-                          return isActionUsefull(a);
-                        });
-    PassActionList Result = {FilteredListOfActions.begin(), FilteredListOfActions.end()};
-    assignIndices(Result);
-    assert(Result.size() == config::NumberOfActions & "Expected number of action differs from actual!");
-    return Result;
-  }
-
-  PassActionList AllPossibleActions = createAllPossibleActions();
-
-  using PassActionMap = StringMap<const PassAction *>;
-  PassActionMap createActionMap() {
-    PassActionMap result{};
-    for (const PassAction &x : AllPossibleActions) {
-      result[x.getName()] = &x;
-    }
-    return result;
-  }
+                        [](const PassAction &a) { return isActionUsefull(a); });
+  PassActionList Result = {FilteredListOfActions.begin(),
+                           FilteredListOfActions.end()};
+  assignIndices(Result);
+  assert(Result.size() == config::NumberOfActions &
+         "Expected number of action differs from actual!");
+  return Result;
 }
+
+PassActionList AllPossibleActions = createAllPossibleActions();
+
+using PassActionMap = StringMap<const PassAction *>;
+PassActionMap createActionMap() {
+  PassActionMap result{};
+  for (const PassAction &x : AllPossibleActions) {
+    result[x.getName()] = &x;
+  }
+  return result;
+}
+} // namespace
 
 namespace llvm {
 namespace wazuhl {
-  PassActionList PassAction::getAllPossibleActions() {
-    return AllPossibleActions;
-  }
-  const PassAction &PassAction::getActionByName(const llvm::StringRef Name) {
-    static PassActionMap Actions = createActionMap();
-    return *Actions[Name];
-  }
+PassActionList PassAction::getAllPossibleActions() {
+  return AllPossibleActions;
+}
+const PassAction &PassAction::getActionByName(const llvm::StringRef Name) {
+  static PassActionMap Actions = createActionMap();
+  return *Actions[Name];
+}
 
-  PassAction PassAction::getActionByIndex(unsigned Index) {
-    return AllPossibleActions[Index];
-  }
+PassAction PassAction::getActionByIndex(unsigned Index) {
+  return AllPossibleActions[Index];
 }
-}
+} // namespace wazuhl
+} // namespace llvm

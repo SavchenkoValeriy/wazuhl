@@ -19,6 +19,8 @@ services:
     image: mongo
     container_name: mongo
     restart: always
+    volumes:
+      - ./experience:/data/db
     networks: ['gym']
 
 networks: {gym: {}}

@@ -48,7 +48,7 @@ class Reinforcer:
         Cp = test.compile_time
         Ep = test.execution_time
         logging.info("Cp = {}, C = {}, Ep = {}, E = {}".format(Cp, C, Ep, E))
-        if not Cp or not Ep: return -1
+        if not Cp or not Ep: return -100.0
         return (E - Ep) / (E + 1e-10) + alpha * (C - Cp) / (C + 1e-10)
 
     def run(self):

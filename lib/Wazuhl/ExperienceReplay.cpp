@@ -1,5 +1,7 @@
 #include "llvm/Wazuhl/ExperienceReplay.h"
 
+#include "llvm/Support/raw_ostream.h"
+
 #include <bsoncxx/builder/stream/document.hpp>
 #include <bsoncxx/json.hpp>
 
@@ -38,8 +40,9 @@ void fillArray(IterableT &List, const llvm::StringRef ArrayName,
                view &DocumentView) {
   auto element = DocumentView[ArrayName.str()];
   bsoncxx::array::view array = element.get_array();
+  unsigned i = 0;
   for (auto value : array) {
-    List.push_back(value.get_double());
+    List[i++] = value.get_double();
   }
 }
 } // anonymous namespace
@@ -62,7 +65,7 @@ public:
 private:
   void initialize();
   void createCollection(mongocxx::collection &collection,
-                        const std::string &name);
+                        const std::string &name, bool capped);
 
   void uploadApprovedExperience();
   void uploadExperienceWaitingForApproval();
@@ -94,30 +97,35 @@ ExperienceReplayImpl::ExperienceReplayImpl() { initialize(); }
 
 void ExperienceReplayImpl::initialize() {
   ExternalMemory = MongoClient["wazuhl"];
-  createCollection(ApprovedRecords, "approved");
-  createCollection(RecordsWaitingForApproval, "waiting");
+  createCollection(ApprovedRecords, "approved", true);
+  createCollection(RecordsWaitingForApproval, "waiting", false);
 }
 
 void ExperienceReplayImpl::createCollection(mongocxx::collection &collection,
-                                            const std::string &name) {
+                                            const std::string &name,
+                                            bool capped) {
   if (!ExternalMemory.has_collection(name)) {
-    // Experience replay should be renewable
-    // it means that old records must not be in use.
-    // Mongo 'max' option for collections does exactly what we want:
-    // when max is reached, old records are deleted
-    auto createCollectionCommand =
-        document{} << "create" << name << "capped"
-                   << true // collection with 'max' is capped
-                   << "size"
-                   << 4294967296 // capped collection should have 'size'
-                                 // attribute we limit it to 4GB
-                   << "max" << config::ExperienceSize << finalize;
-    // TODO: move constants to config
+    if (capped) {
+      // Experience replay should be renewable
+      // it means that old records must not be in use.
+      // Mongo 'max' option for collections does exactly what we want:
+      // when max is reached, old records are deleted
+      auto createCollectionCommand =
+          document{} << "create" << name << "capped"
+                     << true // collection with 'max' is capped
+                     << "size"
+                     << 4294967296 // capped collection should have 'size'
+                                   // attribute we limit it to 4GB
+                     << "max" << config::ExperienceSize << finalize;
+      // TODO: move constants to config
 
-    // collection is created by a 'document' command and not by
-    // 'create_collection' function because its' 'size' parameter is restricted
-    // to int values
-    ExternalMemory.run_command(std::move(createCollectionCommand));
+      // collection is created by a 'document' command and not by
+      // 'create_collection' function because its' 'size' parameter is
+      // restricted to int values
+      ExternalMemory.run_command(std::move(createCollectionCommand));
+    } else {
+      ExternalMemory.create_collection(name);
+    }
   }
   collection = ExternalMemory.collection(name);
 }
@@ -133,7 +141,7 @@ void ExperienceReplayImpl::uploadApprovedExperience() {
   const auto &State = LastExperience.first;
   const auto &Values = LastExperience.second;
 
-  if (State.empty() or Values.empty()) {
+  if (not State.isInitialized() or Values.empty()) {
     return;
   }
 
@@ -150,7 +158,7 @@ void ExperienceReplayImpl::uploadExperienceWaitingForApproval() {
   const auto &State = LastExperience.first;
   const auto &Values = LastExperience.second;
 
-  if (State.empty() or Values.empty()) {
+  if (not State.isInitialized() or Values.empty()) {
     llvm::errs() << "Wazuhl doesn't have good experience :(\n";
     return;
   }
@@ -175,24 +183,26 @@ RecalledExperience ExperienceReplayImpl::replay() {
   RecalledExperience Result;
   // Wazuhl doesn't have enough experience to even start
   // the learning process
-  llvm::errs() << "Wazuhl's checking for experience\n";
   constexpr unsigned MinimalSizeForDB = 100;
   if (ApprovedRecords.count({}) <
       std::max(MinimalSizeForDB, config::MinibatchSize))
     return Result;
 
   // Randomly choose MinibatchSize number of experience entries
-  llvm::errs() << "There is some experience for Wazuhl to learn from\n";
   auto SampleQuery = pipeline{};
-  SampleQuery.sample(config::MinibatchSize);
+  SampleQuery.sample(100);
 
   auto Cursor = ApprovedRecords.aggregate(SampleQuery);
+
   for (auto doc : Cursor) {
     StateType state;
     fillArray(state, "state", doc);
-    ValuesType values;
+    ValuesType values(config::NumberOfActions);
     fillArray(values, "values", doc);
-    Result.push_back({state, values});
+    Result.emplace_back(state, values);
+    if (Result.size() == config::MinibatchSize) {
+      break;
+    }
   }
 
   return Result;

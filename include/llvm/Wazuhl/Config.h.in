@@ -7,21 +7,21 @@ namespace llvm {
 namespace wazuhl {
 namespace config {
 
-  StringRef getCaffeModelPath();
-  StringRef getCaffeSolverPath();
-  StringRef getWazuhlConfigPath();
-  StringRef getTrainedNetFile();
+StringRef getCaffeModelPath();
+StringRef getCaffeSolverPath();
+StringRef getWazuhlConfigPath();
+StringRef getTrainedNetFile();
 
-  constexpr unsigned MinibatchSize = ${MINIBATCH_SIZE},
- #define LAST_OTHER_INST(num)                    \
-    NumberOfOpcodes = num,
+constexpr unsigned MinibatchSize = ${MINIBATCH_SIZE},
+#define LAST_OTHER_INST(num) NumberOfIRFeatures = num,
 #include "llvm/IR/Instruction.def"
-    TimerIndex = NumberOfOpcodes + 1,
-    NumberOfFeatures = ${NUMBER_OF_FEATURES},
-    NumberOfActions = ${NUMBER_OF_ACTIONS};
-  constexpr auto ExperienceSize = ${EXPERIENCE_SIZE};
-}
-}
-}
+                   TimeIndex = NumberOfIRFeatures + 1,
+                   ActionOffset = TimeIndex + 1,
+                   NumberOfActions = ${NUMBER_OF_ACTIONS},
+                   NumberOfFeatures = NumberOfIRFeatures + NumberOfActions + 1;
+constexpr auto ExperienceSize = ${EXPERIENCE_SIZE};
+} // namespace config
+} // namespace wazuhl
+} // namespace llvm
 
 #endif /* LLVM_WAZUHL_CONFIG_H */
