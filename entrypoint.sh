@@ -1,7 +1,7 @@
 #!/usr/bin/bash
 
 cd /wazuhl-build
-cmake -G Ninja /wazuhl -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/llvm
+cmake -G Ninja /wazuhl -DLLVM_ENABLE_WAZUHL=1 -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/llvm
 ninja
 ninja install
 

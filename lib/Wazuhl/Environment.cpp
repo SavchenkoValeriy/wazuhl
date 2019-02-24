@@ -39,7 +39,8 @@ void Environment::updateState() {
 }
 
 void Environment::takeAction(const Action &A) {
-  llvm::errs() << "Wazuhl is taking action " << A.getName() << "\n";
+  llvm::errs() << "Wazuhl is taking action '" << A.getName() << "' with index "
+               << A.getIndex() << "\n";
   ++nTakenActions;
   // terminate actions taking if MaxAllowedActions already taken
   if (nTakenActions == maxAllowedActions) {

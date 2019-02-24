@@ -71,6 +71,10 @@ class Reinforcer:
             logging.info("Reward: %s", reward)
             self.experience.approve(reward)
 
+    def __sufficient_test(self, category, test):
+        baseline = self.baselines[category][str(test)]
+        return baseline is not None and baseline > 0.01
+
     def __check__(self, tests):
         tests = set(map(str, tests))
         logging.info(len(tests))
