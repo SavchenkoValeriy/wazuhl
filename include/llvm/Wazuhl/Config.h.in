@@ -15,8 +15,7 @@ StringRef getTrainedNetFile();
 constexpr unsigned MinibatchSize = ${MINIBATCH_SIZE},
 #define LAST_OTHER_INST(num) NumberOfIRFeatures = num,
 #include "llvm/IR/Instruction.def"
-                   TimeIndex = NumberOfIRFeatures + 1,
-                   ActionOffset = TimeIndex + 1,
+                   TimeIndex = NumberOfIRFeatures, ActionOffset = TimeIndex + 1,
                    NumberOfActions = ${NUMBER_OF_ACTIONS},
                    NumberOfFeatures = NumberOfIRFeatures + NumberOfActions + 1;
 constexpr auto ExperienceSize = ${EXPERIENCE_SIZE};

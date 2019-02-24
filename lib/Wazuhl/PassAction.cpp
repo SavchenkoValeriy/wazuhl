@@ -212,7 +212,7 @@ PassActionList createAllPossibleActions() {
   PassActionList Result = {FilteredListOfActions.begin(),
                            FilteredListOfActions.end()};
   assignIndices(Result);
-  assert(Result.size() == config::NumberOfActions &
+  assert(Result.size() == config::NumberOfActions &&
          "Expected number of action differs from actual!");
   return Result;
 }

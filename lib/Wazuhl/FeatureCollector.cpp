@@ -64,7 +64,7 @@ FeatureVector ModuleFeatureCollector::run(Module &M,
         FAM.getResult<FunctionFeatureCollector>(F));
   }
 
-  FeatureVector result(NumberOfFeatures);
+  FeatureVector result(NumberOfIRFeatures);
   const unsigned NumberOfFunctions = FeaturesOfAllFunctions.size();
   for (unsigned i = 0; i < NumberOfFunctions; ++i) {
     for (unsigned j = 0; j < NumberOfIRFeatures; ++j) {
