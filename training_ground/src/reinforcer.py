@@ -59,6 +59,9 @@ class Reinforcer:
         tests = [test for test in tests
                  if str(test) in self.baselines["compile_time"].keys()]
         self.__check__(tests)
+        tests = [test for test in tests
+                 if self.__sufficient_test("compile_time", test) and
+                 self.__sufficient_test("execution_time", test)]
         logging.info("Checked tests")
 
         while True:
