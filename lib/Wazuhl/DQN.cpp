@@ -171,8 +171,9 @@ void DQNCoreImpl::loadData(ExperienceReplay::RecalledExperience &Chunk) {
 }
 
 inline void DQNCoreImpl::initialize() {
-  caffe::Caffe::set_mode(caffe::Caffe::CPU);
+  google::InitGoogleLogging("wazuhl");
   google::SetStderrLogging(google::GLOG_FATAL);
+  caffe::Caffe::set_mode(caffe::Caffe::CPU);
   initializeSolver();
   initializeNets();
   initializeInputs();
