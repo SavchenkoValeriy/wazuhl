@@ -132,7 +132,8 @@ inline ResultsVector DQNCoreImpl::getResultsVector() const {
   ResultsVector result(NumberOfActions, 0.0);
 
   for (auto i : seq<unsigned>(0, NumberOfActions)) {
-    result[i] = Output->data_at(1 /* batch-size for CalculatingNet */, i, 0, 0);
+    result[i] =
+        Output->data_at(0 /* batch-size for CalculatingNet - 1 */, i, 0, 0);
   }
 
   return result;
@@ -154,8 +155,8 @@ void DQNCoreImpl::experienceUpdate() {
 }
 
 void DQNCoreImpl::loadData(ExperienceReplay::RecalledExperience &Chunk) {
-  SmallVector<double, config::MinibatchSize * config::NumberOfFeatures> States;
-  SmallVector<double, config::MinibatchSize * config::NumberOfActions> Outcomes;
+  SmallVector<Result, config::MinibatchSize * config::NumberOfFeatures> States;
+  SmallVector<Result, config::MinibatchSize * config::NumberOfActions> Outcomes;
 
   for (auto &Element : Chunk) {
     States.append(Element.first.begin(), Element.first.end());
@@ -164,6 +165,7 @@ void DQNCoreImpl::loadData(ExperienceReplay::RecalledExperience &Chunk) {
 
   LearningNetInput->Reset(States.data(), TrainDummy.data(),
                           config::MinibatchSize);
+
   LearningNetExpected->Reset(Outcomes.data(), TrainDummy.data(),
                              config::MinibatchSize);
 }

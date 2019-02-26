@@ -27,19 +27,12 @@ using MongifiedExperience = bsoncxx::document::value;
 
 mongocxx::instance instance{};
 
-double round(double element) {
-  if (std::isnan(element)) {
-    return -10.0;
-  }
-  return std::round(1000 * element) / 1000;
-}
-
 template <class IterableT>
 void addArray(document &Destination, const llvm::StringRef ArrayName,
               const IterableT &List) {
   auto array = Destination << ArrayName << open_array;
   for (auto element : List) {
-    array = array << round(element);
+    array = array << element;
   }
   array << close_array;
 }
