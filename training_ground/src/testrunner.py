@@ -37,4 +37,6 @@ def run_test(test):
     test.compile()
     logging.debug("Run test")
     test.run()
+    logging.debug("Cleanup test")
+    test.clean()
     return test

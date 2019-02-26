@@ -62,6 +62,10 @@ def check_run(test):
     check_method(test, "run", 1)
 
 
+def check_run(test):
+    check_method(test, "clean", 1)
+
+
 def check_method(class_object, name, number_of_args):
     class_name = class_object.__name__
     class_fields = inspect.getmembers(class_object)

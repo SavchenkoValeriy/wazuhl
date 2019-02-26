@@ -103,5 +103,14 @@ class Test:
             execution_time = float(execution_time.group(1))
         self.compile_time, self.execution_time = compile_time, execution_time
 
+    def clean(self):
+        self.suite.go_to_builddir()
+        with open(os.devnull, 'wb') as devnull:
+            make_command = ['make', 'clean']
+            logging.debug(make_command)
+            clean_output = subprocess.run(make_command,  env=self.suite.configuration_env,
+                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
     def __str__(self):
         return self.name
