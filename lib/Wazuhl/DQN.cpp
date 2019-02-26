@@ -37,7 +37,8 @@ using ResultsVector = DQNCore::ResultsVector;
 
 llvm::SmallVector<Result, config::MinibatchSize>
     TrainDummy(config::MinibatchSize);
-llvm::SmallVector<Result, 1> TestDummy(1);
+llvm::SmallVector<Result, config::NumberOfActions>
+    TestDummy(config::NumberOfActions);
 
 class DQNCoreImpl {
 public:
@@ -80,11 +81,13 @@ private:
   // learning net is shared with the solver
   NetS LearningNet;
   NetU CalculatingNet;
-  InputLayerS LearningNetInput;
+  InputLayerS LearningNetInputState;
+  InputLayerS LearningNetInputAction;
   InputLayerS LearningNetExpected;
-  InputLayerS CalculatingNetInput;
+  InputLayerS CalculatingNetInputState;
+  InputLayerS CalculatingNetInputAction;
   SolverTy Solver;
-  BlobS Output;
+  BlobS Output, Loss;
 
   mutable State LastState;
   mutable ResultsVector LastResultsVector;
@@ -108,7 +111,23 @@ ResultsVector DQNCoreImpl::calculate(const State &S) const {
   if (LastState != S) {
     // caffe requires non-const array for MemoryData
     LastState = S;
-    CalculatingNetInput->Reset(LastState.data(), TestDummy.data(), 1);
+
+    constexpr unsigned StateBlobSize =
+        config::NumberOfFeatures * config::NumberOfActions;
+    constexpr unsigned ActionBlobSize =
+        config::NumberOfActions * config::NumberOfActions;
+    SmallVector<Result, StateBlobSize> InputStates;
+    SmallVector<Result, ActionBlobSize> InputActions(ActionBlobSize, 0.0);
+    for (unsigned i : seq<unsigned>(0, config::NumberOfActions)) {
+      InputStates.append(S.begin(), S.end());
+      InputActions[i * config::NumberOfActions + i] = 1;
+    }
+
+    CalculatingNetInputState->Reset(InputStates.data(), TestDummy.data(),
+                                    config::NumberOfActions);
+    CalculatingNetInputAction->Reset(InputActions.data(), TestDummy.data(),
+                                     config::NumberOfActions);
+
     CalculatingNet->Forward();
     LastResultsVector = getResultsVector();
   }
@@ -128,12 +147,10 @@ void DQNCoreImpl::update(const State &S, const Action &A, Result value) {
 }
 
 inline ResultsVector DQNCoreImpl::getResultsVector() const {
-  static auto NumberOfActions = Action::getAllPossibleActions().size();
-  ResultsVector result(NumberOfActions, 0.0);
+  ResultsVector result(config::NumberOfActions, 0.0);
 
-  for (auto i : seq<unsigned>(0, NumberOfActions)) {
-    result[i] =
-        Output->data_at(0 /* batch-size for CalculatingNet - 1 */, i, 0, 0);
+  for (auto i : seq<unsigned>(0, config::NumberOfActions)) {
+    result[i] = Output->data_at(i, 0, 0, 0);
   }
 
   return result;
@@ -141,31 +158,41 @@ inline ResultsVector DQNCoreImpl::getResultsVector() const {
 
 void DQNCoreImpl::addToExperience(const State &S, const Action &A,
                                   Result value) {
-  auto Values = calculate(S);
   auto TakenActionIndex = A.getIndex();
-  Values[TakenActionIndex] = value;
+  llvm::errs() << "Remembering value " << value << " at index " << A.getIndex()
+               << "\n";
 
-  Experience->addToExperience({S, Values}, TakenActionIndex);
+  Experience->addToExperience({S, TakenActionIndex, value});
 }
 
 void DQNCoreImpl::experienceUpdate() {
   auto ChunkOfExperience = Experience->replay();
+  if (ChunkOfExperience.empty()) {
+    return;
+  }
   loadData(ChunkOfExperience);
   Solver->Step(1);
+  llvm::errs() << "Loss = " << Loss->data_at(0, 0, 0, 0) << "\n";
 }
 
 void DQNCoreImpl::loadData(ExperienceReplay::RecalledExperience &Chunk) {
+  constexpr unsigned SizeOfActionsBlob =
+      config::MinibatchSize * config::NumberOfActions;
   SmallVector<Result, config::MinibatchSize * config::NumberOfFeatures> States;
-  SmallVector<Result, config::MinibatchSize * config::NumberOfActions> Outcomes;
+  SmallVector<Result, SizeOfActionsBlob> Actions(SizeOfActionsBlob, 0.0);
+  SmallVector<Result, config::MinibatchSize> Outcomes;
 
+  unsigned i = 0;
   for (auto &Element : Chunk) {
-    States.append(Element.first.begin(), Element.first.end());
-    Outcomes.append(Element.second.begin(), Element.second.end());
+    States.append(Element.state.begin(), Element.state.end());
+    Actions[i++ * config::NumberOfActions + Element.actionIndex] = 1;
+    Outcomes.push_back(Element.value);
   }
 
-  LearningNetInput->Reset(States.data(), TrainDummy.data(),
-                          config::MinibatchSize);
-
+  LearningNetInputState->Reset(States.data(), TrainDummy.data(),
+                               config::MinibatchSize);
+  LearningNetInputAction->Reset(Actions.data(), TrainDummy.data(),
+                                config::MinibatchSize);
   LearningNetExpected->Reset(Outcomes.data(), TrainDummy.data(),
                              config::MinibatchSize);
 }
@@ -202,16 +229,21 @@ inline void DQNCoreImpl::initializeNets() {
 }
 
 inline void DQNCoreImpl::initializeInputs() {
-  CalculatingNetInput = boost::static_pointer_cast<InputLayer>(
-      CalculatingNet->layer_by_name("live_input"));
-  LearningNetInput = boost::static_pointer_cast<InputLayer>(
+  CalculatingNetInputState = boost::static_pointer_cast<InputLayer>(
+      CalculatingNet->layer_by_name("live_input_state"));
+  CalculatingNetInputAction = boost::static_pointer_cast<InputLayer>(
+      CalculatingNet->layer_by_name("live_input_action"));
+  LearningNetInputState = boost::static_pointer_cast<InputLayer>(
       LearningNet->layer_by_name("experience_replay_state"));
-  LearningNetExpected = boost::static_pointer_cast<InputLayer>(
+  LearningNetInputAction = boost::static_pointer_cast<InputLayer>(
       LearningNet->layer_by_name("experience_replay_action"));
+  LearningNetExpected = boost::static_pointer_cast<InputLayer>(
+      LearningNet->layer_by_name("experience_replay_value"));
 }
 
 inline void DQNCoreImpl::initializeOutputs() {
   Output = CalculatingNet->blob_by_name("Q_values");
+  Loss = LearningNet->blob_by_name("loss");
 }
 
 inline void DQNCoreImpl::lazyInitializeExperience() {

@@ -22,6 +22,7 @@ using mongocxx::pipeline;
 namespace {
 using ExperienceUnit = llvm::wazuhl::ExperienceReplay::ExperienceUnit;
 using StateType = llvm::wazuhl::ExperienceReplay::State;
+using ResultType = llvm::wazuhl::ExperienceReplay::Result;
 using RecalledExperience = llvm::wazuhl::ExperienceReplay::RecalledExperience;
 using MongifiedExperience = bsoncxx::document::value;
 
@@ -61,7 +62,7 @@ public:
 
   ~ExperienceReplayImpl();
 
-  void addToExperience(ExperienceUnit, unsigned index);
+  void addToExperience(ExperienceUnit);
   RecalledExperience replay();
 
 private:
@@ -72,14 +73,15 @@ private:
   void uploadApprovedExperience();
   void uploadExperienceWaitingForApproval();
 
+  void uploadExperienceImpl(mongocxx::collection &collection);
+
   mongocxx::client MongoClient{mongocxx::uri{"mongodb://mongo:27017"}};
   mongocxx::database ExternalMemory;
   mongocxx::collection ApprovedRecords;
   mongocxx::collection RecordsWaitingForApproval;
 
   // it should be at least one action taken (terminal)
-  ExperienceUnit LastExperience;
-  unsigned IndexOfTheLastTakenAction;
+  ExperienceUnit LastExperience{};
 };
 
 ExperienceReplay::ExperienceReplay()
@@ -87,8 +89,8 @@ ExperienceReplay::ExperienceReplay()
 ExperienceReplay::~ExperienceReplay() = default;
 
 void ExperienceReplay::addToExperience(
-    ExperienceReplay::ExperienceUnit toRemember, unsigned index) {
-  pImpl->addToExperience(toRemember, index);
+    ExperienceReplay::ExperienceUnit toRemember) {
+  pImpl->addToExperience(toRemember);
 }
 
 ExperienceReplay::RecalledExperience ExperienceReplay::replay() {
@@ -132,46 +134,36 @@ void ExperienceReplayImpl::createCollection(mongocxx::collection &collection,
   collection = ExternalMemory.collection(name);
 }
 
-void ExperienceReplayImpl::addToExperience(ExperienceUnit toRemember,
-                                           unsigned index) {
+void ExperienceReplayImpl::addToExperience(ExperienceUnit toRemember) {
   uploadApprovedExperience();
   LastExperience = toRemember;
-  IndexOfTheLastTakenAction = index;
 }
 
 void ExperienceReplayImpl::uploadApprovedExperience() {
-  const auto &State = LastExperience.first;
-  const auto &Values = LastExperience.second;
-
-  if (not State.isInitialized() or Values.empty()) {
-    return;
-  }
-
-  auto ExperienceRecord = document{};
-
-  addArray(ExperienceRecord, "state", State);
-  addArray(ExperienceRecord, "values", Values);
-
-  ApprovedRecords.insert_one(ExperienceRecord.view());
+  uploadExperienceImpl(ApprovedRecords);
 }
 
 void ExperienceReplayImpl::uploadExperienceWaitingForApproval() {
-  llvm::errs() << "Wazuhl tries to memorize his last experience\n";
-  const auto &State = LastExperience.first;
-  const auto &Values = LastExperience.second;
+  uploadExperienceImpl(RecordsWaitingForApproval);
+}
 
-  if (not State.isInitialized() or Values.empty()) {
-    llvm::errs() << "Wazuhl doesn't have good experience :(\n";
+void ExperienceReplayImpl::uploadExperienceImpl(
+    mongocxx::collection &collection) {
+  const auto &State = LastExperience.state;
+  const auto Index = LastExperience.actionIndex;
+  const auto Value = LastExperience.value;
+
+  if (not State.isInitialized()) {
     return;
   }
 
   auto ExperienceRecord = document{};
 
   addArray(ExperienceRecord, "state", State);
-  addArray(ExperienceRecord, "values", Values);
-  ExperienceRecord << "index" << (int)IndexOfTheLastTakenAction;
+  ExperienceRecord << "value" << Value;
+  ExperienceRecord << "index" << (int)Index;
 
-  RecordsWaitingForApproval.insert_one(ExperienceRecord.view());
+  collection.insert_one(ExperienceRecord.view());
 }
 
 ExperienceReplayImpl::~ExperienceReplayImpl() {
@@ -179,9 +171,6 @@ ExperienceReplayImpl::~ExperienceReplayImpl() {
 }
 
 RecalledExperience ExperienceReplayImpl::replay() {
-  using StateType = ExperienceUnit::first_type;
-  using ValuesType = ExperienceUnit::second_type;
-
   RecalledExperience Result;
   // Wazuhl doesn't have enough experience to even start
   // the learning process
@@ -199,9 +188,9 @@ RecalledExperience ExperienceReplayImpl::replay() {
   for (auto doc : Cursor) {
     StateType state;
     fillArray(state, "state", doc);
-    ValuesType values(config::NumberOfActions);
-    fillArray(values, "values", doc);
-    Result.emplace_back(state, values);
+    ResultType value = doc["value"].get_double();
+    unsigned index = static_cast<unsigned>(doc["index"].get_int32());
+    Result.push_back({state, index, value});
     if (Result.size() == config::MinibatchSize) {
       break;
     }

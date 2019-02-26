@@ -47,10 +47,10 @@ add_llvm_library(LLVMWazuhl
   )
 
 set(MINIBATCH_SIZE 32)
-set(EXPERIENCE_SIZE 1000)
+set(EXPERIENCE_SIZE 10000)
 set(NUMBER_OF_FEATURES 172)
 set(NUMBER_OF_ACTIONS 107)
-set(HIDDEN_SIZE 300)
+set(HIDDEN_SIZE 128)
 
 configure_file(
   ${LLVM_MAIN_INCLUDE_DIR}/llvm/Wazuhl/Config.h.in

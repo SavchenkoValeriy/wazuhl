@@ -22,8 +22,10 @@ class Experience:
         for item in self.waiting.find({}):
             record = {}
             record["state"] = item["state"]
-            record["values"] = item["values"]
-            record["values"][item["index"]] = value
+            record["value"] = value
+            record["index"] = item["index"]
+            logging.debug("Inserting value %s at index %d in the memory",
+                          value, item["index"])
             new_records.append(record)
         if new_records:
             # sometimes waiting-for-approval collection is empty

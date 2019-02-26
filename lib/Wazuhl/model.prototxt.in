@@ -2,7 +2,7 @@ name: "wazuhl_DQN"
 layer {
   name: "experience_replay_state"
   type: "MemoryData"
-  top: "data"
+  top: "data_features"
   top: "redundant1"
   include {
     phase: TRAIN
@@ -16,22 +16,63 @@ layer {
   }
 }
 layer {
-  name: "live_input"
+  name: "experience_replay_action"
   type: "MemoryData"
-  top: "data"
+  top: "data_action"
   top: "redundant2"
+  include {
+    phase: TRAIN
+  }
+  memory_data_param
+  {
+    batch_size: ${MINIBATCH_SIZE}
+    channels: ${NUMBER_OF_ACTIONS}
+    height: 1
+    width: 1
+  }
+}
+layer {
+  name: "live_input_state"
+  type: "MemoryData"
+  top: "data_features"
+  top: "redundant3"
   include {
     phase: TEST
   }
   memory_data_param 
   {
-    batch_size: 1
+    batch_size: ${NUMBER_OF_ACTIONS}
     channels: ${NUMBER_OF_FEATURES}
     height: 1
     width: 1
   }
 }
-
+layer {
+  name: "live_input_action"
+  type: "MemoryData"
+  top: "data_action"
+  top: "redundant4"
+  include {
+    phase: TEST
+  }
+  memory_data_param
+  {
+    batch_size: ${NUMBER_OF_ACTIONS}
+    channels: ${NUMBER_OF_ACTIONS}
+    height: 1
+    width: 1
+  }
+}
+layer {
+  name: "concat"
+  type: "Concat"
+  bottom: "data_action"
+  bottom: "data_features"
+  top: "data"
+  concat_param {
+    axis: 1
+  }
+}
 layer {
   name: "norm"
   type: "BatchNorm"
@@ -82,7 +123,7 @@ layer {
   bottom: "relu2"
   top: "ip3"
   inner_product_param {
-    num_output: ${NUMBER_OF_ACTIONS}
+    num_output: 1
     weight_filler {
       type: "gaussian"
       std: 0.01
@@ -97,25 +138,32 @@ layer {
 }
 layer {
   name: "scale"
-  type: "Scale"
+  type: "Power"
   bottom: "tanh"
-  top: "Q_values"
-  scale_param {
-    filler {
-      type: "constant"
-      value: 1.0
-    }
-    bias_term: true
-    bias_filler {
-      type: "constant"
-      value: 0.0
-    }
+  top: "scaled"
+  power_param {
+    power: 1
+    scale: 20
+    shift: 0
   }
 }
 layer {
-  name: "experience_replay_action"
+  name: "bias"
+  type: "Bias"
+  bottom: "scaled"
+  top: "Q_values"
+  bias_param {
+    filler {
+      type: "constant"
+      value: -20
+    }
+  }
+}
+
+layer {
+  name: "experience_replay_value"
   type: "MemoryData"
-  top: "experience_replay_action"
+  top: "experience_replay_value"
   top: "redundant3"
   include {
     phase: TRAIN
@@ -125,14 +173,14 @@ layer {
     batch_size: ${MINIBATCH_SIZE}
     channels: 1 
     height: 1
-    width: ${NUMBER_OF_ACTIONS}
+    width: 1
   }
 }
 layer {
   name: "silence_train"
   type: "Silence"
   bottom: "redundant1"
-  bottom: "redundant3"
+  bottom: "redundant2"
   include {
     phase: TRAIN
   }
@@ -140,7 +188,8 @@ layer {
 layer {
   name: "silence_test"
   type: "Silence"
-  bottom: "redundant2"
+  bottom: "redundant3"
+  bottom: "redundant4"
   include {
     phase: TEST
   }
@@ -149,7 +198,7 @@ layer {
   name: "loss"
   type: "EuclideanLoss"
   bottom: "Q_values"
-  bottom: "experience_replay_action"
+  bottom: "experience_replay_value"
   top: "loss"
   include {
     phase: TRAIN

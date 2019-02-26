@@ -17,11 +17,18 @@ public:
   ExperienceReplay();
   ~ExperienceReplay();
 
-  using ExperienceUnit = std::pair<DQNCore::State, DQNCore::ResultsVector>;
   using State = DQNCore::State;
+  using Result = DQNCore::Result;
+
+  struct ExperienceUnit {
+    State state;
+    unsigned actionIndex;
+    Result value;
+  };
+
   using RecalledExperience = SmallVector<ExperienceUnit, config::MinibatchSize>;
 
-  void addToExperience(ExperienceUnit, unsigned index);
+  void addToExperience(ExperienceUnit);
   RecalledExperience replay();
 
 private:
