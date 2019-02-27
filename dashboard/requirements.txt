@@ -1,0 +1,6 @@
+flask
+wtforms
+matplotlib
+numpy
+seaborn
+pymongo
