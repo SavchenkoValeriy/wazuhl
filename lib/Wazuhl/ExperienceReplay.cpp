@@ -28,8 +28,8 @@ using MongifiedExperience = bsoncxx::document::value;
 
 mongocxx::instance instance{};
 
-template <class IterableT>
-void addArray(document &Destination, const llvm::StringRef ArrayName,
+template <class Doc, class IterableT>
+void addArray(Doc &Destination, const llvm::StringRef ArrayName,
               const IterableT &List) {
   auto array = Destination << ArrayName << open_array;
   for (auto element : List) {
@@ -70,10 +70,7 @@ private:
   void createCollection(mongocxx::collection &collection,
                         const std::string &name, bool capped);
 
-  void uploadApprovedExperience();
-  void uploadExperienceWaitingForApproval();
-
-  void uploadExperienceImpl(mongocxx::collection &collection);
+  void uploadRecordedTrace();
 
   mongocxx::client MongoClient{mongocxx::uri{"mongodb://mongo:27017"}};
   mongocxx::database ExternalMemory;
@@ -81,7 +78,8 @@ private:
   mongocxx::collection RecordsWaitingForApproval;
 
   // it should be at least one action taken (terminal)
-  ExperienceUnit LastExperience{};
+  static constexpr unsigned TraceLength = 100;
+  SmallVector<ExperienceUnit, TraceLength> RecordedTrace;
 };
 
 ExperienceReplay::ExperienceReplay()
@@ -135,47 +133,45 @@ void ExperienceReplayImpl::createCollection(mongocxx::collection &collection,
 }
 
 void ExperienceReplayImpl::addToExperience(ExperienceUnit toRemember) {
-  uploadApprovedExperience();
-  LastExperience = toRemember;
+  RecordedTrace.emplace_back(std::move(toRemember));
 }
 
-void ExperienceReplayImpl::uploadApprovedExperience() {
-  uploadExperienceImpl(ApprovedRecords);
-}
-
-void ExperienceReplayImpl::uploadExperienceWaitingForApproval() {
-  uploadExperienceImpl(RecordsWaitingForApproval);
-}
-
-void ExperienceReplayImpl::uploadExperienceImpl(
-    mongocxx::collection &collection) {
-  const auto &State = LastExperience.state;
-  const auto Index = LastExperience.actionIndex;
-  const auto Value = LastExperience.value;
-
-  if (not State.isInitialized()) {
+void ExperienceReplayImpl::uploadRecordedTrace() {
+  if (RecordedTrace.empty()) {
     return;
   }
 
   auto ExperienceRecord = document{};
 
-  addArray(ExperienceRecord, "state", State);
-  ExperienceRecord << "value" << Value;
-  ExperienceRecord << "index" << (int)Index;
+  auto array = ExperienceRecord << "trace" << open_array;
 
-  collection.insert_one(ExperienceRecord.view());
+  for (auto &Experience : RecordedTrace) {
+    const auto &State = Experience.state;
+    const auto Index = Experience.actionIndex;
+    const auto Value = Experience.value;
+
+    auto object = array << open_document;
+
+    addArray(object, "state", State);
+    object << "value" << Value;
+    object << "index" << (int)Index;
+
+    object << close_document;
+  }
+
+  array << close_array;
+
+  RecordsWaitingForApproval.insert_one(ExperienceRecord.view());
 }
 
-ExperienceReplayImpl::~ExperienceReplayImpl() {
-  uploadExperienceWaitingForApproval();
-}
+ExperienceReplayImpl::~ExperienceReplayImpl() { uploadRecordedTrace(); }
 
 RecalledExperience ExperienceReplayImpl::replay() {
   RecalledExperience Result;
   // Wazuhl doesn't have enough experience to even start
   // the learning process
   constexpr unsigned MinimalSizeForDB = 100;
-  if (ApprovedRecords.count({}) <
+  if (ApprovedRecords.count_documents({}) <
       std::max(MinimalSizeForDB, config::MinibatchSize))
     return Result;
 
