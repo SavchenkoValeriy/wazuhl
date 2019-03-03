@@ -170,14 +170,14 @@ RecalledExperience ExperienceReplayImpl::replay() {
   RecalledExperience Result;
   // Wazuhl doesn't have enough experience to even start
   // the learning process
-  constexpr unsigned MinimalSizeForDB = 100;
+  constexpr unsigned MinimalSizeForDB = 300;
   if (ApprovedRecords.count_documents({}) <
       std::max(MinimalSizeForDB, config::MinibatchSize))
     return Result;
 
   // Randomly choose MinibatchSize number of experience entries
   auto SampleQuery = pipeline{};
-  SampleQuery.sample(100);
+  SampleQuery.sample(MinimalSizeForDB);
 
   auto Cursor = ApprovedRecords.aggregate(SampleQuery);
 

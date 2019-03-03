@@ -1,7 +1,7 @@
 net: "model.prototxt"
 solver_type: RMSPROP
 momentum: 0.95
-base_lr: 0.2
+base_lr: 0.001
 lr_policy: "step"
 gamma: 0.1
 stepsize: 1000000
