@@ -30,6 +30,10 @@ def get_alpha():
     return 0.5
 
 
+def get_lambda():
+    return 0.8
+
+
 def get_llvm_test_suite_path():
     return sys.argv[2]
 
