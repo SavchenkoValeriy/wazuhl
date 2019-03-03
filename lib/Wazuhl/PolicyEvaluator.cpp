@@ -14,7 +14,7 @@ void PolicyEvaluator::evaluate() {
 
 void LearningPolicyEvaluator::evaluate() {
   DQN Q;
-  rl::policies::EpsilonGreedy<DQN> policy{0.9, Q};
+  rl::policies::EpsilonGreedy<DQN> policy{0.7, Q};
   auto learner =
       rl::createLearner<rl::QLearning>(OptimizationEnv, Q, policy, 1.0, 0.99);
   learner.learn();

@@ -44,7 +44,7 @@ layer {
   name: "live_input_state"
   type: "MemoryData"
   top: "data"
-  top: "redundant3"
+  top: "redundant4"
   include {
     phase: TEST
   }
@@ -68,7 +68,7 @@ layer {
   bottom: "norm_data"
   top: "ip1"
   inner_product_param {
-    num_output: ${HIDDEN_SIZE}
+    num_output: ${HIDDEN_SIZE_1}
     weight_filler {
       type: "gaussian"
       std: 0.01
@@ -87,7 +87,7 @@ layer {
   bottom: "relu1"
   top: "ip2"
   inner_product_param {
-    num_output: ${HIDDEN_SIZE}
+    num_output: ${HIDDEN_SIZE_2}
     weight_filler {
       type: "gaussian"
       std: 0.01
@@ -101,12 +101,100 @@ layer {
   top: "relu2"
 }
 layer {
+  name: "action_ip1"
+  type: "InnerProduct"
+  bottom: "relu2"
+  top: "action_ip1"
+  inner_product_param {
+    num_output: ${ACTION_HIDDEN_SIZE}
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+  }
+}
+layer {
+  name: "action_relu1"
+  type: "ReLU"
+  bottom: "action_ip1"
+  top: "action_relu1"
+}
+layer {
+  name: "action_ip2"
+  type: "InnerProduct"
+  bottom: "action_relu1"
+  top: "action_ip2"
+  inner_product_param {
+    num_output: ${NUMBER_OF_ACTIONS}
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+  }
+}
+layer {
+  name: "action_tanh"
+  type: "TanH"
+  bottom: "action_ip2"
+  top: "action_tanh"
+}
+layer {
+  name: "scale"
+  type: "Power"
+  bottom: "action_tanh"
+  top: "action_scaled"
+  power_param {
+    power: 1
+    scale: 20
+    shift: 0
+  }
+}
+layer {
+  name: "action_bias"
+  type: "Bias"
+  bottom: "action_scaled"
+  top: "A_advantage"
+  bias_param {
+    filler {
+      type: "constant"
+      value: 0
+    }
+  }
+}
+layer {
+  name: "mean"
+  type: "Reduction"
+  bottom: "A_advantage"
+  top: "mean_advantage"
+  reduction_param {
+    operation: MEAN
+  }
+}
+layer {
+  name: "negation"
+  type: "Power"
+  bottom: "mean_advantage"
+  top: "negative_mean_advantage"
+  power_param {
+    power: 1
+    scale: -1
+    shift: 0
+  }
+}
+layer {
+  name: "delta"
+  type: "Bias"
+  bottom: "A_advantage"
+  bottom: "negative_mean_advantage"
+  top: "delta_advantage"
+}
+layer {
   name: "ip3"
   type: "InnerProduct"
   bottom: "relu2"
   top: "ip3"
   inner_product_param {
-    num_output: ${NUMBER_OF_ACTIONS}
+    num_output: 1
     weight_filler {
       type: "gaussian"
       std: 0.01
@@ -134,7 +222,7 @@ layer {
   name: "bias"
   type: "Bias"
   bottom: "scaled"
-  top: "Q_values"
+  top: "V_value"
   bias_param {
     filler {
       type: "constant"
@@ -142,6 +230,27 @@ layer {
     }
   }
 }
+
+layer {
+  name: "tile"
+  type: "Tile"
+  bottom: "V_value"
+  top: "V_values"
+  tile_param {
+    tiles: ${NUMBER_OF_ACTIONS}
+  }
+}
+layer {
+  name: "sum"
+  type: "Eltwise"
+  bottom: "delta_advantage"
+  bottom: "V_values"
+  top: "Q_values"
+  eltwise_param {
+    operation: SUM
+  }
+}
+
 layer {
   name: "eltwise"
   type: "Eltwise"
@@ -177,6 +286,7 @@ layer {
   type: "Silence"
   bottom: "redundant1"
   bottom: "redundant2"
+  bottom: "redundant3"
   include {
     phase: TRAIN
   }
@@ -184,7 +294,7 @@ layer {
 layer {
   name: "silence_test"
   type: "Silence"
-  bottom: "redundant3"
+  bottom: "redundant4"
   include {
     phase: TEST
   }
@@ -192,7 +302,7 @@ layer {
 layer {
   name: "loss"
   type: "EuclideanLoss"
-  bottom: "Q_values"
+  bottom: "filtered_Q_values"
   bottom: "experience_replay_value"
   top: "loss"
   include {
