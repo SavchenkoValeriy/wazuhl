@@ -17,6 +17,14 @@ services:
     depends_on: ['mongo']
     networks: ['gym']
 
+  dashboard:
+    build: ./dashboard
+    container_name: dashboard
+    ports:
+      - '5000:5000'
+    depends_on: ['mongo']
+    networks: ['gym']
+
   mongo:
     image: mongo
     container_name: mongo

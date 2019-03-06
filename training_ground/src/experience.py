@@ -1,4 +1,4 @@
-from pymongo import MongoClient
+from pymongo import MongoClient, DESCENDING
 from multiprocessing import Process
 import subprocess
 import pprint
@@ -16,10 +16,22 @@ class Experience:
         self.db = self.client["wazuhl"]
         self.approved = self.db["approved"]
         self.waiting = self.db["waiting"]
+        self.rewards = self.db["rewards"]
+        self.update_rewards_counter()
+
+    def update_rewards_counter(self):
+        self.rewards_counter = 0
+        last_reward = [entry["step"] for entry in
+                       self.rewards.find(sort=[("step", DESCENDING)],
+                                         limit=1, projection={"step": 1})]
+        if last_reward:
+            self.rewards_counter = last_reward[0]
 
     def approve(self, value):
         new_records = []
         last_index = 0
+        self.rewards.insert_one({"step": self.rewards_counter, "reward": value})
+        self.rewards_counter += 1
         for trace in self.waiting.find({}):
             R = value
             itertrace = iter(reversed(trace["trace"]))
