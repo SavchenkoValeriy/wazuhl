@@ -33,10 +33,10 @@ def run_random(tests):
 
 
 def run_test(test):
-    logging.debug("Compile test")
+    logging.debug("Compile test %s", test)
     test.compile()
-    logging.debug("Run test")
+    logging.debug("Run test %s", test)
     test.run()
-    logging.debug("Cleanup test")
+    logging.debug("Cleanup test %s", test)
     test.clean()
     return test

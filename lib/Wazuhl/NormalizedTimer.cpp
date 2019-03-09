@@ -10,14 +10,13 @@ namespace llvm {
 namespace wazuhl {
 bool NormalizedTimer::IsInitialized = false;
 
-NormalizedTimer::Initializer NormalizedTimer::init() {
-  if (IsInitialized)
-    return {};
-  return {getTimer()};
+void NormalizedTimer::init() {
+  // this will initiate the creation of a static variable in 'getTimer'
+  getTimer();
 }
 
 NormalizedTimer::NormalizedTimer()
-    : InnerTimer(), Total(), NormalizationFactor(0.0) {
+    : InnerTimer(), Total(), NormalizationTime(0.0) {
   InnerTimer.init(
       "Wazuhl's timer",
       "The purpose of this timer is to add time into Wazuhl's states");
@@ -38,10 +37,13 @@ double NormalizedTimer::getNormalizedTime() {
 }
 
 double NormalizedTimer::getNormalizedTimeImpl() {
-  if (!IsInitialized)
-    return 1.0;
-  assert(NormalizationFactor != 0 && "Normalization factor shouldn't be 0!");
-  return getTimeImpl() / NormalizationFactor;
+  if (!IsInitialized) {
+    NormalizationTime = getTimeImpl();
+    return 0.0;
+  }
+  assert(NormalizationTime != 0 && "Normalization time shouldn't be 0!");
+  auto Result = getTimeImpl();
+  return (Result - NormalizationTime) / NormalizationTime;
 }
 
 NormalizedTimer &NormalizedTimer::getTimer() {
@@ -53,11 +55,5 @@ void NormalizedTimer::startInnerTimer() { InnerTimer.startTimer(); }
 
 void NormalizedTimer::stopInnerTimer() { InnerTimer.stopTimer(); }
 
-NormalizedTimer::Initializer::~Initializer() {
-  if (Master) {
-    Master->NormalizationFactor = NormalizedTimer::getTime();
-    NormalizedTimer::IsInitialized = true;
-  }
-}
 } // namespace wazuhl
 } // namespace llvm
