@@ -33,9 +33,9 @@ Environment::Environment(Module &IR, ModuleAnalysisManager &AM)
 Environment::State Environment::getState() { return Current; }
 
 void Environment::updateState() {
-  auto initializer = NormalizedTimer::init();
   auto IRFeatures = AM.getResult<ModuleFeatureCollector>(IR);
   Current.setIRFeatures(IRFeatures);
+  Current.setTime(NormalizedTimer::getTime());
 }
 
 void Environment::takeAction(const Action &A) {

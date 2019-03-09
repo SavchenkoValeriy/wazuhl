@@ -7,26 +7,9 @@ namespace llvm {
 namespace wazuhl {
 class NormalizedTimer {
 public:
-  class Initializer {
-  public:
-    Initializer() = default;
-    Initializer(NormalizedTimer &timer) : Master(&timer) {}
-
-    Initializer(const Initializer &) = delete;
-    Initializer(Initializer &&) = default;
-
-    Initializer &operator=(const Initializer &) = delete;
-    Initializer &operator=(Initializer &&) = delete;
-
-    ~Initializer();
-
-  private:
-    NormalizedTimer *Master = nullptr;
-  };
-
-  static Initializer init();
   static double getTime();
   static double getNormalizedTime();
+  static void init();
 
 private:
   static NormalizedTimer &getTimer();
@@ -46,9 +29,8 @@ private:
 
   Timer InnerTimer;
   TimeRecord Total;
-  double NormalizationFactor;
+  double NormalizationTime;
   static bool IsInitialized;
-  friend class Initializer;
 };
 } // namespace wazuhl
 } // namespace llvm
