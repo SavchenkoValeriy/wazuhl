@@ -17,8 +17,9 @@ constexpr unsigned MinibatchSize = ${MINIBATCH_SIZE},
 #include "llvm/IR/Instruction.def"
                    TimeIndex = NumberOfIRFeatures, ActionOffset = TimeIndex + 1,
                    NumberOfActions = ${NUMBER_OF_ACTIONS},
-                   NumberOfFeatures = NumberOfIRFeatures + NumberOfActions + 1;
+                   NumberOfFeatures = NumberOfIRFeatures + 1;
 constexpr auto ExperienceSize = ${EXPERIENCE_SIZE};
+constexpr auto ContextSize = ${CONTEXT_SIZE};
 } // namespace config
 } // namespace wazuhl
 } // namespace llvm

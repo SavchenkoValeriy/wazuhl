@@ -3,7 +3,7 @@ layer {
   name: "experience_replay_state"
   type: "MemoryData"
   top: "data"
-  top: "redundant1"
+  top: "redundant_train_1"
   include {
     phase: TRAIN
   }
@@ -19,7 +19,7 @@ layer {
   name: "experience_replay_action"
   type: "MemoryData"
   top: "data_action"
-  top: "redundant2"
+  top: "redundant_train_2"
   include {
     phase: TRAIN
   }
@@ -28,6 +28,38 @@ layer {
     batch_size: ${MINIBATCH_SIZE}
     channels: ${NUMBER_OF_ACTIONS}
     height: 1
+    width: 1
+  }
+}
+layer {
+  name: "experience_replay_context"
+  type: "MemoryData"
+  top: "context"
+  top: "redundant_train_3"
+  include {
+    phase: TRAIN
+  }
+  memory_data_param
+  {
+    batch_size: ${MINIBATCH_SIZE}
+    channels: 1
+    height: ${CONTEXT_SIZE}
+    width: 1
+  }
+}
+layer {
+  name: "experience_replay_clip"
+  type: "MemoryData"
+  top: "clip"
+  top: "redundant_train_4"
+  include {
+    phase: TRAIN
+  }
+  memory_data_param
+  {
+    batch_size: ${MINIBATCH_SIZE}
+    channels: 1
+    height: ${CONTEXT_SIZE}
     width: 1
   }
 }
@@ -44,7 +76,7 @@ layer {
   name: "live_input_state"
   type: "MemoryData"
   top: "data"
-  top: "redundant4"
+  top: "redundant_test_1"
   include {
     phase: TEST
   }
@@ -56,6 +88,108 @@ layer {
     width: 1
   }
 }
+layer {
+  name: "live_input_context"
+  type: "MemoryData"
+  top: "context"
+  top: "redundant_test_2"
+  include {
+    phase: TEST
+  }
+  memory_data_param 
+  {
+    batch_size: 1
+    channels: 1
+    height: ${CONTEXT_SIZE}
+    width: 1
+  }
+}
+
+layer {
+  name: "live_input_clip"
+  type: "MemoryData"
+  top: "clip"
+  top: "redundant_test_3"
+  include {
+    phase: TEST
+  }
+  memory_data_param 
+  {
+    batch_size: 1
+    channels: 1
+    height: ${CONTEXT_SIZE}
+    width: 1
+  }
+}
+
+
+layer {
+  name: "flatten_context"
+  type: "Flatten"
+  bottom: "context"
+  top: "flat_context"
+}
+
+layer {
+  name: "flatten_clip"
+  type: "Flatten"
+  bottom: "clip"
+  top: "flat_clip"
+}
+
+layer {
+  name: "embedding"
+  type: "Embed"
+  bottom: "flat_context"
+  top: "context_embedding"
+  param {
+   lr_mult: 1
+  }
+  embed_param {
+   bias_term: false
+   input_dim: ${CONTEXT_ALPHABET_SIZE} # alphabet size
+   num_output: ${CONTEXT_EMBEDDING_SIZE}
+   weight_filler {
+    type: "uniform"
+    min: -0.1
+    max: 0.1
+   }
+ }
+}
+
+layer {
+  name: "lstm"
+  type: "LSTM"
+  bottom: "context_embedding"
+  bottom: "flat_clip"
+  top: "lstm"
+  recurrent_param {
+    num_output: ${CONTEXT_LSTM_SIZE}
+  }
+}
+
+
+layer {
+  name: "flatten_lstm"
+  type: "Flatten"
+  bottom: "lstm"
+  top: "flat_lstm"
+}
+
+layer {
+  name: "encoder"
+  type: "InnerProduct"
+  bottom: "flat_lstm"
+  top: "context_encoded"
+  inner_product_param {
+    num_output: ${CONTEXT_LSTM_SIZE}
+    weight_filler {
+      type: "gaussian"
+      std: 0.01
+    }
+  }
+}
+
 layer {
   name: "norm"
   type: "BatchNorm"
@@ -100,10 +234,23 @@ layer {
   bottom: "ip2"
   top: "relu2"
 }
+
+layer {
+  name: "concat"
+  type: "Concat"
+  bottom: "relu2"
+  bottom: "context_encoded"
+  top: "state_encoded"
+  concat_param {
+    axis: 1
+  }
+}
+
+
 layer {
   name: "action_ip1"
   type: "InnerProduct"
-  bottom: "relu2"
+  bottom: "state_encoded"
   top: "action_ip1"
   inner_product_param {
     num_output: ${ACTION_HIDDEN_SIZE}
@@ -191,7 +338,7 @@ layer {
 layer {
   name: "ip3"
   type: "InnerProduct"
-  bottom: "relu2"
+  bottom: "state_encoded"
   top: "ip3"
   inner_product_param {
     num_output: 1
@@ -269,7 +416,7 @@ layer {
   name: "experience_replay_value"
   type: "MemoryData"
   top: "experience_replay_value"
-  top: "redundant3"
+  top: "redundant_train_5"
   include {
     phase: TRAIN
   }
@@ -284,9 +431,11 @@ layer {
 layer {
   name: "silence_train"
   type: "Silence"
-  bottom: "redundant1"
-  bottom: "redundant2"
-  bottom: "redundant3"
+  bottom: "redundant_train_1"
+  bottom: "redundant_train_2"
+  bottom: "redundant_train_3"
+  bottom: "redundant_train_4"
+  bottom: "redundant_train_5"
   include {
     phase: TRAIN
   }
@@ -294,7 +443,9 @@ layer {
 layer {
   name: "silence_test"
   type: "Silence"
-  bottom: "redundant4"
+  bottom: "redundant_test_1"
+  bottom: "redundant_test_2"
+  bottom: "redundant_test_3"
   include {
     phase: TEST
   }

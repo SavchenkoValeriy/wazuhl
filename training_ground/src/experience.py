@@ -43,6 +43,7 @@ class Experience:
 def _form_eligibility_trace_return(element, value, is_terminal=False):
     record = {}
     record["state"] = element["state"]
+    record["context"] = element["context"]
     record["index"] = element["index"]
     if is_terminal:
         record["value"] = value

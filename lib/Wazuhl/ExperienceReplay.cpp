@@ -28,24 +28,34 @@ using MongifiedExperience = bsoncxx::document::value;
 
 mongocxx::instance instance{};
 
-template <class Doc, class IterableT>
+template <typename Type, class Doc, class IterableT>
 void addArray(Doc &Destination, const llvm::StringRef ArrayName,
               const IterableT &List) {
   auto array = Destination << ArrayName << open_array;
   for (auto element : List) {
-    array = array << element;
+    array = array << (Type)element;
   }
   array << close_array;
 }
 
 template <class IterableT>
-void fillArray(IterableT &List, const llvm::StringRef ArrayName,
-               view &DocumentView) {
+void fillStateArray(IterableT &List, const llvm::StringRef ArrayName,
+                    view &DocumentView) {
   auto element = DocumentView[ArrayName.str()];
   bsoncxx::array::view array = element.get_array();
   unsigned i = 0;
   for (auto value : array) {
     List[i++] = value.get_double();
+  }
+}
+
+template <class IterableT>
+void fillContextArray(IterableT &List, const llvm::StringRef ArrayName,
+                      view &DocumentView) {
+  auto element = DocumentView[ArrayName.str()];
+  bsoncxx::array::view array = element.get_array();
+  for (auto value : array) {
+    List.push_back(static_cast<unsigned>(value.get_int32()));
   }
 }
 } // anonymous namespace
@@ -152,7 +162,8 @@ void ExperienceReplayImpl::uploadRecordedTrace() {
 
     auto object = array << open_document;
 
-    addArray(object, "state", State);
+    addArray<double>(object, "state", State);
+    addArray<int>(object, "context", State.getContext());
     object << "value" << Value;
     object << "index" << (int)Index;
 
@@ -183,7 +194,8 @@ RecalledExperience ExperienceReplayImpl::replay() {
 
   for (auto doc : Cursor) {
     StateType state;
-    fillArray(state, "state", doc);
+    fillStateArray(state, "state", doc);
+    fillContextArray(state.getContext(), "context", doc);
     ResultType value = doc["value"].get_double();
     unsigned index = static_cast<unsigned>(doc["index"].get_int32());
     Result.push_back({state, index, value});

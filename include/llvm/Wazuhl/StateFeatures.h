@@ -11,6 +11,7 @@ namespace wazuhl {
 class StateFeatures {
 public:
   using StorageType = SmallVector<double, config::NumberOfFeatures>;
+  using ContextType = SmallVector<unsigned, config::ContextSize>;
 
   StateFeatures() : Storage(config::NumberOfFeatures) {}
 
@@ -28,7 +29,7 @@ public:
   }
 
   void recordAction(const PassAction &A) {
-    Storage[config::ActionOffset + A.getIndex()] += 1;
+    Context.push_back(A.getIndex());
     init();
   }
 
@@ -56,6 +57,9 @@ public:
     return Storage[idx];
   }
 
+  ContextType &getContext() { return Context; }
+  const ContextType &getContext() const { return Context; }
+
   bool isInitialized() const { return Initialized; }
 
 private:
@@ -63,6 +67,7 @@ private:
 
   bool Initialized{false};
   StorageType Storage;
+  ContextType Context;
 };
 
 } // end namespace wazuhl
