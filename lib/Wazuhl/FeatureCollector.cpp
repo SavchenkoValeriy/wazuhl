@@ -24,56 +24,40 @@ public:
   CollectorImpl()
       : CollectedFeatures(NumberOfFeatures), TotalInsts(CollectedFeatures[0]) {}
 
-  FeatureVector &getCollectedFeatures() { return CollectedFeatures; }
+  RawFeatureVector &&getCollectedFeatures() {
+    return std::move(CollectedFeatures);
+  }
 
 private:
-  FeatureVector CollectedFeatures;
+  RawFeatureVector CollectedFeatures;
   double &TotalInsts;
 };
-
-void normalizeVector(FeatureVector &features, double normalizationFactor) {
-  if (normalizationFactor == 0)
-    return;
-  for (auto &feature : features) {
-    feature /= normalizationFactor;
-  }
-}
 } // namespace
 
 namespace llvm {
 namespace wazuhl {
-FeatureVector FunctionFeatureCollector::run(Function &F,
-                                            FunctionAnalysisManager &) {
+RawFeatureVector FunctionFeatureCollector::run(Function &F,
+                                               FunctionAnalysisManager &) {
   CollectorImpl Collector;
   Collector.visit(F);
-  auto &result = Collector.getCollectedFeatures();
-  normalizeVector(result, result[0]);
-  return result;
+  return Collector.getCollectedFeatures();
 }
 
-FeatureVector ModuleFeatureCollector::run(Module &M,
+RawIRFeatures ModuleFeatureCollector::run(Module &M,
                                           ModuleAnalysisManager &AM) {
-  using FeatureVectors = std::vector<FeatureVector>;
-  FeatureVectors FeaturesOfAllFunctions;
+  RawIRFeatures Result;
 
   FunctionAnalysisManager &FAM =
       AM.getResult<FunctionAnalysisManagerModuleProxy>(M).getManager();
 
   for (Function &F : M) {
-    FeaturesOfAllFunctions.emplace_back(
-        FAM.getResult<FunctionFeatureCollector>(F));
-  }
-
-  FeatureVector result(NumberOfIRFeatures);
-  const unsigned NumberOfFunctions = FeaturesOfAllFunctions.size();
-  for (unsigned i = 0; i < NumberOfFunctions; ++i) {
-    for (unsigned j = 0; j < NumberOfIRFeatures; ++j) {
-      result[j] += FeaturesOfAllFunctions[i][j];
+    if (not F.empty()) {
+      Result.addVectorForFunction(&F,
+                                  FAM.getResult<FunctionFeatureCollector>(F));
     }
   }
 
-  normalizeVector(result, NumberOfFunctions);
-  return result;
+  return Result;
 }
 
 AnalysisKey FunctionFeatureCollector::Key;

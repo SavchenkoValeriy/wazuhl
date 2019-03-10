@@ -12,14 +12,18 @@ StringRef getCaffeSolverPath();
 StringRef getWazuhlConfigPath();
 StringRef getTrainedNetFile();
 
-constexpr unsigned MinibatchSize = ${MINIBATCH_SIZE},
-#define LAST_OTHER_INST(num) NumberOfIRFeatures = num,
+constexpr unsigned MinibatchSize = ${MINIBATCH_SIZE};
+#define LAST_OTHER_INST(num) constexpr auto NumberOfRawIRFeatures = num;
 #include "llvm/IR/Instruction.def"
-                   TimeIndex = NumberOfIRFeatures, ActionOffset = TimeIndex + 1,
+
+constexpr unsigned NumberOfIRFeatures = NumberOfRawIRFeatures * 8,
+                   DiffIRFeaturesOffset = NumberOfIRFeatures,
+                   TimeIndex = NumberOfIRFeatures * 2,
+                   ActionOffset = TimeIndex + 1,
                    NumberOfActions = ${NUMBER_OF_ACTIONS},
-                   NumberOfFeatures = NumberOfIRFeatures + 1;
-constexpr auto ExperienceSize = ${EXPERIENCE_SIZE};
-constexpr auto ContextSize = ${CONTEXT_SIZE};
+                   NumberOfFeatures = NumberOfIRFeatures * 2 + 1,
+                   ExperienceSize = ${EXPERIENCE_SIZE},
+                   ContextSize = ${CONTEXT_SIZE};
 } // namespace config
 } // namespace wazuhl
 } // namespace llvm

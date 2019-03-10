@@ -27,6 +27,7 @@ Environment::Environment(Module &IR, ModuleAnalysisManager &AM)
     : IR(IR), AM(AM), Current(), PA(PreservedAnalyses::all()) {
   llvm::errs() << "Wazuhl has " << Action::getAllPossibleActions().size()
                << " actions to choose from\n";
+  InitialIRState = AM.getResult<ModuleFeatureCollector>(IR);
   updateState();
 }
 
@@ -34,7 +35,8 @@ Environment::State Environment::getState() { return Current; }
 
 void Environment::updateState() {
   auto IRFeatures = AM.getResult<ModuleFeatureCollector>(IR);
-  Current.setIRFeatures(IRFeatures);
+  Current.setIRFeatures(IRFeatures / InitialIRState);
+  Current.setDiffIRFeatures((IRFeatures - InitialIRState) / InitialIRState);
   Current.setTime(NormalizedTimer::getTime());
 }
 

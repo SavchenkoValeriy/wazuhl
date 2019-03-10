@@ -128,7 +128,7 @@ void ExperienceReplayImpl::createCollection(mongocxx::collection &collection,
                      << "size"
                      << 4294967296 // capped collection should have 'size'
                                    // attribute we limit it to 4GB
-                     << "max" << config::ExperienceSize << finalize;
+                     << "max" << (int)config::ExperienceSize << finalize;
       // TODO: move constants to config
 
       // collection is created by a 'document' command and not by
@@ -188,7 +188,7 @@ RecalledExperience ExperienceReplayImpl::replay() {
 
   // Randomly choose MinibatchSize number of experience entries
   auto SampleQuery = pipeline{};
-  SampleQuery.sample(MinimalSizeForDB);
+  SampleQuery.sample((int)MinimalSizeForDB);
 
   auto Cursor = ApprovedRecords.aggregate(SampleQuery);
 
