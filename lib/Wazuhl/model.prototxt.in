@@ -315,12 +315,25 @@ layer {
   top: "mean_advantage"
   reduction_param {
     operation: MEAN
+    axis: 1
+  }
+}
+layer {
+  name: "reshape"
+  type: "Reshape"
+  bottom: "mean_advantage"
+  top: "rmean_advantage"
+  reshape_param {
+    shape {
+      dim: 0  # copy the dimension from below
+      dim: 1
+    }
   }
 }
 layer {
   name: "negation"
   type: "Power"
-  bottom: "mean_advantage"
+  bottom: "rmean_advantage"
   top: "negative_mean_advantage"
   power_param {
     power: 1
@@ -329,11 +342,24 @@ layer {
   }
 }
 layer {
-  name: "delta"
-  type: "Bias"
-  bottom: "A_advantage"
+  name: "tile_mean"
+  type: "Tile"
   bottom: "negative_mean_advantage"
+  top: "nm_advantage"
+  tile_param {
+    tiles: ${NUMBER_OF_ACTIONS}
+    axis: 1
+  }
+}
+layer {
+  name: "delta"
+  type: "Eltwise"
+  bottom: "A_advantage"
+  bottom: "nm_advantage"
   top: "delta_advantage"
+  eltwise_param {
+    operation: SUM
+  }
 }
 layer {
   name: "ip3"
