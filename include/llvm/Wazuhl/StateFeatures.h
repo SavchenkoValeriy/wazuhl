@@ -23,6 +23,14 @@ public:
     init();
   }
 
+  void setDiffIRFeatures(ArrayRef<double> Features) {
+    assert(Features.size() == config::NumberOfIRFeatures);
+    for (unsigned i = 0; i < config::NumberOfIRFeatures; ++i) {
+      Storage[config::DiffIRFeaturesOffset + i] = Features[i];
+    }
+    init();
+  }
+
   void setTime(double time) {
     Storage[config::TimeIndex] = time;
     init();

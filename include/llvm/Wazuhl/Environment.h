@@ -26,6 +26,7 @@ private:
 
   Module &IR;
   ModuleAnalysisManager &AM;
+  RawIRFeatures InitialIRState;
   State Current;
   PreservedAnalyses PA;
   bool Terminated = false;
