@@ -1,6 +1,7 @@
 #ifndef LLVM_WAZUHL_Q_H
 #define LLVM_WAZUHL_Q_H
 
+#include "llvm/ADT/Sequence.h"
 #include <algorithm>
 #include <utility>
 
@@ -13,77 +14,99 @@ public:
   using State = typename QCore::State;
   using Action = typename QCore::Action;
   using Result = typename QCore::Result;
+  template <class T> using Batch = typename QCore::template Batch<T>;
   using ResultsVector = typename QCore::ResultsVector;
-  using ActionValuePair = typename std::pair<Action, Result>;
 
-  class CurriedQ;
+  template <class ResultT, class StateT, class ActionT> class CurriedQ;
 
-  class QValue {
+  template <class ResultT, class StateT, class ActionT> class QValue {
   public:
-    operator Result() const { return Value; }
+    operator ResultT() const {
+      auto Values = Original->calculate(S);
+      return getValues(Values, A);
+    }
 
-    void operator=(Result value) { Original->update(S, A, value); }
+    void operator=(ResultT value) { Original->update(S, A, value); }
 
   private:
-    QValue(QCore *original, const State &s, const Action &a, Result value)
-        : Original(original), S(s), A(a), Value(value) {}
+    QValue(QCore *original, const StateT &s, const ActionT &a)
+        : Original(original), S(s), A(a) {}
 
-    QValue(const QCore *original, const State &s, const Action &a, Result value)
-        : Original(original), S(s), A(a), Value(value) {}
+    QValue(const QCore *original, const StateT &s, const ActionT &a)
+        : Original(original), S(s), A(a) {}
 
     mutable QCore *Original;
-    const State &S;
-    const Action &A;
-    Result Value;
+    const StateT &S;
+    const ActionT &A;
 
-    friend class CurriedQ;
+    friend class CurriedQ<ResultT, StateT, ActionT>;
   };
 
-  class CurriedQ {
+  template <class ResultT, class StateT, class ActionT> class CurriedQ {
   public:
-    QValue operator()(const Action &A) {
-      unsigned ActionIndex{A.getIndex()};
-      return {Original, S, A, Results[ActionIndex]};
+    QValue<ResultT, StateT, ActionT> operator()(const ActionT &A) {
+      return {Original, S, A};
     }
 
-    const QValue operator()(const Action &A) const {
-      unsigned ActionIndex{A.getIndex()};
-      return {Original, S, A, Results[ActionIndex]};
-    }
-
-    ActionValuePair max_pair() const {
-      auto Begin = std::begin(Results), End = std::end(Results);
-      auto MaxIterator = std::max_element(Begin, End);
-      unsigned Index = MaxIterator - Begin;
-      Action A = Action::getActionByIndex(Index);
-      return {A, *MaxIterator};
+    const QValue<ResultT, StateT, ActionT> operator()(const ActionT &A) const {
+      return {Original, S, A};
     }
 
   private:
-    CurriedQ(QCore *original, const State &s, ResultsVector &&results)
-        : Original(original), S(s), Results(results) {}
+    CurriedQ(QCore *original, const State &s) : Original(original), S(s) {}
 
-    CurriedQ(const QCore *original, const State &s, ResultsVector &&results)
-        : Original(original), S(s), Results(results) {}
+    CurriedQ(const QCore *original, const State &s)
+        : Original(original), S(s) {}
 
     mutable QCore *Original;
     const State &S;
-    ResultsVector Results;
 
     friend class Q<QCore>;
+
+  public:
+    auto max() const -> decltype(this->Original->max(this->S)) {
+      return Original->max(S);
+    }
+
+    auto argmax() const -> decltype(this->Original->argmax(this->S)) {
+      return Original->argmax(S);
+    }
   };
 
-  CurriedQ operator()(const State &S) {
-    return {&Original, S, Original.calculate(S)};
+  template <template <class...> class T>
+  using OneValue = T<Result, State, Action>;
+
+  template <template <class...> class T>
+  using BatchValue = T<ResultsVector, Batch<State>, Batch<Action>>;
+
+  OneValue<CurriedQ> operator()(const State &S) { return {&Original, S}; }
+
+  BatchValue<CurriedQ> operator()(const Batch<State> &S) {
+    return {&Original, S};
   }
 
-  const CurriedQ operator()(const State &S) const {
-    return {&Original, S, Original.calculate(S)};
+  const OneValue<CurriedQ> operator()(const State &S) const {
+    return {&Original, S};
   }
 
-  QValue operator()(const State &S, const Action &A) { return (*this)(S)(A); }
+  const BatchValue<CurriedQ> operator()(const Batch<State> &S) const {
+    return {&Original, S};
+  }
 
-  const QValue operator()(const State &S, const Action &A) const {
+  OneValue<QValue> operator()(const State &S, const Action &A) {
+    return (*this)(S)(A);
+  }
+
+  BatchValue<QValue> operator()(const Batch<State> &S, const Batch<Action> &A) {
+    return (*this)(S)(A);
+  }
+
+  const OneValue<QValue> operator()(const State &S, const Action &A) const {
+    return (*this)(S)(A);
+  }
+
+  const BatchValue<QValue> operator()(const Batch<State> &S,
+                                      const Batch<Action> &A) const {
     return (*this)(S)(A);
   }
 
@@ -95,18 +118,30 @@ public:
   Q<QCore> &operator=(Q<QCore> &&) = default;
 
 private:
+  static Result getValues(const ResultsVector &V, const Action &A) {
+    return V[A.getIndex()];
+  }
+
+  static Batch<Result> getValues(const Batch<ResultsVector> &V,
+                                 const Batch<Action> &A) {
+    Batch<Result> Values;
+    for (auto i : seq<unsigned>(V.size())) {
+      Values.push_back(V[i][A[i].getIndex()]);
+    }
+    return Values;
+  }
+
   mutable QCore Original;
 };
 
 template <class QCore> using QS = typename Q<QCore>::CurriedQ;
 
 template <class Q>
-auto argmax(const Q &Function) -> decltype(Function.max_pair().first) {
-  return Function.max_pair().first;
+auto argmax(const Q &Function) -> decltype(Function.argmax()) {
+  return Function.argmax();
 }
-template <class Q>
-auto max(const Q &Function) -> decltype(Function.max_pair().second) {
-  return Function.max_pair().second;
+template <class Q> auto max(const Q &Function) -> decltype(Function.max()) {
+  return Function.max();
 }
 } // namespace rl
 } // namespace wazuhl
