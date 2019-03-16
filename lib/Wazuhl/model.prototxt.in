@@ -168,26 +168,24 @@ layer {
   }
 }
 
+# lstm only works in seq2seq mode and we need only the last element
+layer {
+  name: "crop_sequence"
+  type: "Slice"
+  bottom: "lstm"
+  top: "redundant_seq"
+  top: "last_lstm"
+  slice_param {
+    axis: 1
+    slice_point: ${CONTEXT_LSTM_LAST_IDX}
+  }
+}
 
 layer {
   name: "flatten_lstm"
   type: "Flatten"
-  bottom: "lstm"
-  top: "flat_lstm"
-}
-
-layer {
-  name: "encoder"
-  type: "InnerProduct"
-  bottom: "flat_lstm"
+  bottom: "last_lstm"
   top: "context_encoded"
-  inner_product_param {
-    num_output: ${CONTEXT_LSTM_SIZE}
-    weight_filler {
-      type: "gaussian"
-      std: 0.01
-    }
-  }
 }
 
 layer {
@@ -462,6 +460,7 @@ layer {
   bottom: "redundant_train_3"
   bottom: "redundant_train_4"
   bottom: "redundant_train_5"
+  bottom: "redundant_seq"
   include {
     phase: TRAIN
   }
@@ -472,6 +471,7 @@ layer {
   bottom: "redundant_test_1"
   bottom: "redundant_test_2"
   bottom: "redundant_test_3"
+  bottom: "redundant_seq"
   include {
     phase: TEST
   }
