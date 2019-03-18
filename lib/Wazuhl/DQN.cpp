@@ -34,44 +34,44 @@ using Action = DQNCore::Action;
 using Result = DQNCore::Result;
 using State = DQNCore::State;
 using ResultsVector = DQNCore::ResultsVector;
-
-SmallVector<Result, config::MinibatchSize> TrainDummy(config::MinibatchSize);
-SmallVector<Result, 1> TestDummy(1);
+template <class T> using Batch = DQNCore::Batch<T>;
 constexpr auto ContextTrainBlobSize =
     config::MinibatchSize * config::ContextSize;
-SmallVector<Result, ContextTrainBlobSize>
-    ContextTrainDummy(ContextTrainBlobSize);
-SmallVector<Result, config::ContextSize> ContextTestDummy(config::ContextSize);
 SmallVector<Result, ContextTrainBlobSize> ClipTrainDummy(ContextTrainBlobSize,
                                                          1.0);
 SmallVector<Result, config::ContextSize> ClipTestDummy(config::ContextSize,
                                                        1.0);
 
+constexpr SmallVectorImpl<Result> &getClipDummy(unsigned size) {
+  return size == 1 ? static_cast<SmallVectorImpl<Result> &>(ClipTestDummy)
+                   : static_cast<SmallVectorImpl<Result> &>(ClipTrainDummy);
+}
+
 class DQNCoreImpl {
 public:
   DQNCoreImpl() { initialize(); }
   ~DQNCoreImpl();
-  ResultsVector calculate(const DQN::State &S) const;
+  ResultsVector calculate(const State &S) const;
+  Result max(const State &S) const;
+  Action argmax(const State &S) const;
+
+  Batch<ResultsVector> calculate(const Batch<State> &S) const;
+  Batch<Result> max(const Batch<State> &S) const;
+  Batch<Action> argmax(const Batch<State> &S) const;
+
   void update(const State &S, const Action &A, Result value);
+  void update(const Batch<State> &S, const Batch<Action> &A,
+              const Batch<Result> value);
 
 private:
-  void addToExperience(const State &S, const Action &A, Result value);
-  void experienceUpdate();
-
-  inline void loadData(ExperienceReplay::RecalledExperience &Chunk);
-
   inline void initialize();
   inline void initializeSolver();
   inline void initializeNets();
   inline void initializeInputs();
   inline void initializeOutputs();
 
-  inline void lazyInitializeExperience();
-
   inline void loadTrainedNet();
   inline void saveTrainedNet();
-
-  inline ResultsVector getResultsVector() const;
 
   using Blob = caffe::Blob<Result>;
   using Net = caffe::Net<Result>;
@@ -83,146 +83,258 @@ private:
   using SolverTy = std::unique_ptr<caffe::Solver<Result>>;
   using InputLayer = caffe::MemoryDataLayer<Result>;
   using InputLayerS = boost::shared_ptr<InputLayer>;
-  using ExperienceReplayPtr = std::unique_ptr<ExperienceReplay>;
+
+  template <unsigned Size, class NetT>
+  inline void forward(const Batch<State> &S, NetT &NeuralNet) const;
+  template <unsigned Size, class NetT>
+  inline void loadInputs(const Batch<State> &S, NetT &NeuralNet) const;
+  template <unsigned Size, class NetT>
+  inline Batch<ResultsVector> calculateImpl(const Batch<State> &S,
+                                            NetT &NeuralNet) const;
+  template <unsigned Size, class NetT>
+  inline Batch<Result> maxImpl(const Batch<State> &S, NetT &NeuralNet) const;
+  template <unsigned Size, class NetT>
+  inline Batch<Action> argmaxImpl(const Batch<State> &S, NetT &NeuralNet) const;
+
+  template <class NetT>
+  inline static Blob *getInput(NetT &NeuralNet, const std::string &name);
+  template <class NetT>
+  inline static Result *getInputArray(NetT &NeuralNet, const std::string &name);
+  template <unsigned Size> static inline bool reshape(Blob *Input);
+  template <unsigned Size> static inline bool reshapeRecurrentBlob(Blob *Input);
+
+  static void initializeLogger();
 
   // learning net is shared with the solver
   NetS LearningNet;
   NetU CalculatingNet;
-  InputLayerS LearningNetInputState;
-  InputLayerS LearningNetInputAction;
-  InputLayerS LearningNetInputContext;
-  InputLayerS LearningNetInputClip;
-  InputLayerS LearningNetExpected;
-  InputLayerS CalculatingNetInput;
-  InputLayerS CalculatingNetInputContext;
-  InputLayerS CalculatingNetInputClip;
   SolverTy Solver;
   BlobS Output, Loss;
 
   mutable State LastState;
   mutable ResultsVector LastResultsVector;
-
-  // experience is needed only for learning
-  ExperienceReplayPtr Experience = nullptr;
 };
+
+//===----------------------------------------------------------------------===//
+//                        Original class implementation
+//===----------------------------------------------------------------------===//
 
 ResultsVector DQNCore::calculate(const DQN::State &S) const {
   return pImpl->calculate(S);
+}
+Result DQNCore::max(const DQN::State &S) const { return pImpl->max(S); }
+Action DQNCore::argmax(const DQN::State &S) const { return pImpl->argmax(S); }
+
+Batch<ResultsVector> DQNCore::calculate(const DQN::Batch<State> &S) const {
+  return pImpl->calculate(S);
+}
+Batch<Result> DQNCore::max(const DQN::Batch<State> &S) const {
+  return pImpl->max(S);
+}
+Batch<Action> DQNCore::argmax(const DQN::Batch<State> &S) const {
+  return pImpl->argmax(S);
 }
 
 void DQNCore::update(const State &S, const Action &A, Result value) {
   pImpl->update(S, A, value);
 }
 
+void DQNCore::update(const Batch<State> &S, const Batch<Action> &A,
+                     Batch<Result> value) {
+  pImpl->update(S, A, value);
+}
+
+void DQNCore::copyWeightsFrom(const DQNCore &Source) {}
+
 DQNCore::DQNCore() : pImpl(llvm::make_unique<DQNCoreImpl>()) {}
 DQNCore::~DQNCore() = default;
 
-ResultsVector DQNCoreImpl::calculate(const State &S) const {
-  if (LastState != S) {
-    // caffe requires non-const array for MemoryData
-    LastState = S;
+//===----------------------------------------------------------------------===//
+//                          pImpl's method defintions
+//===----------------------------------------------------------------------===//
 
-    CalculatingNetInput->Reset(LastState.data(), TestDummy.data(),
-                               config::NumberOfActions);
-    SmallVector<Result, config::ContextSize> Context(config::ContextSize);
+template <unsigned Size, class NetT>
+inline void DQNCoreImpl::forward(const Batch<State> &S, NetT &NeuralNet) const {
+  loadInputs<Size>(S, NeuralNet);
+  NeuralNet->Forward();
+}
 
-    unsigned i = 0, j = 0, N = LastState.getContext().size();
-    for (j = std::max(i, N - config::ContextSize); j < N; ++j, ++i) {
-      Context[i] = LastState.getContext()[j] + 1;
+template <unsigned Size, class NetT>
+inline void DQNCoreImpl::loadInputs(const Batch<State> &S,
+                                    NetT &NeuralNet) const {
+  assert(Size == S.size() && "Wrong size of batch is given");
+
+  auto StateInput = getInput(NeuralNet, "data");
+  auto ContextInput = getInput(NeuralNet, "context");
+  auto ClipInput = getInput(NeuralNet, "clip");
+
+  bool NeedReshape = reshape<Size>(StateInput);
+  NeedReshape |= reshapeRecurrentBlob<Size>(ContextInput);
+  NeedReshape |= reshapeRecurrentBlob<Size>(ClipInput);
+
+  if (NeedReshape) {
+    NeuralNet->Reshape();
+  }
+
+  auto States = getInputArray(NeuralNet, "data");
+  auto Contexts = getInputArray(NeuralNet, "context");
+
+  for (auto i : seq<unsigned>(0, Size)) {
+    auto &StateRef = S[i];
+    for (auto j : seq<unsigned>(0, config::NumberOfFeatures)) {
+      States[i * config::NumberOfFeatures + j] = StateRef[j];
     }
 
-    CalculatingNetInputContext->Reset(Context.data(), ContextTestDummy.data(),
-                                      config::ContextSize);
+    for (auto j : seq<unsigned>(0, config::ContextSize)) {
+      Contexts[i * config::ContextSize + j] = 0;
+    }
 
-    CalculatingNetInputClip->Reset(
-        ClipTestDummy.data(), ContextTestDummy.data(), config::ContextSize);
-
-    CalculatingNet->Forward();
-    LastResultsVector = getResultsVector();
+    unsigned j = 0, k = 0, N = StateRef.getContext().size();
+    for (k = std::max(i, N - config::ContextSize); k < N; ++k, ++j) {
+      Contexts[j * Size + i] = StateRef.getContext()[k] + 1;
+    }
   }
-  return LastResultsVector;
+
+  ClipInput->set_cpu_data(getClipDummy(Size).data());
 }
 
-void DQNCoreImpl::update(const State &S, const Action &A, Result value) {
-  // Connect to experience database only if we're trying to
-  // use experience (remember or recall)
-  lazyInitializeExperience();
-  // 1. add (S, A, value) to experience replay
-  addToExperience(S, A, value);
-  // 2. randomly pick a minibatch of triplets (S, A, value)
-  //    out of experience replay
-  // 3. do one step of SGD towards the minibatch by L_2 measure
-  experienceUpdate();
+ResultsVector DQNCoreImpl::calculate(const State &S) const {
+  Batch<State> Wrapper{S};
+  return calculateImpl<1>(Wrapper, CalculatingNet)[0];
 }
 
-inline ResultsVector DQNCoreImpl::getResultsVector() const {
-  ResultsVector result(config::NumberOfActions, 0.0);
+Result DQNCoreImpl::max(const State &S) const {
+  Batch<State> Wrapper{S};
+  return maxImpl<1>(Wrapper, CalculatingNet)[0];
+}
 
-  for (auto i : seq<unsigned>(0, config::NumberOfActions)) {
-    result[i] = Output->data_at(0, i, 0, 0);
+Action DQNCoreImpl::argmax(const State &S) const {
+  Batch<State> Wrapper{S};
+  return argmaxImpl<1>(Wrapper, CalculatingNet)[0];
+}
+
+Batch<ResultsVector> DQNCoreImpl::calculate(const Batch<State> &S) const {
+  return calculateImpl<config::MinibatchSize>(S, CalculatingNet);
+}
+
+Batch<Result> DQNCoreImpl::max(const Batch<State> &S) const {
+  return maxImpl<config::MinibatchSize>(S, CalculatingNet);
+}
+
+Batch<Action> DQNCoreImpl::argmax(const Batch<State> &S) const {
+  return argmaxImpl<config::MinibatchSize>(S, CalculatingNet);
+}
+
+template <unsigned Size, class NetT>
+inline Batch<ResultsVector> DQNCoreImpl::calculateImpl(const Batch<State> &S,
+                                                       NetT &NeuralNet) const {
+  forward<Size>(S, NeuralNet);
+
+  Batch<ResultsVector> result(Size,
+                              ResultsVector(config::NumberOfActions, 0.0));
+
+  for (auto i : seq<unsigned>(0, Size)) {
+    for (auto j : seq<unsigned>(0, config::NumberOfActions)) {
+      result[i][j] = NeuralNet->blob_by_name("Q_values")->data_at(i, j, 0, 0);
+    }
   }
 
   return result;
 }
 
-void DQNCoreImpl::addToExperience(const State &S, const Action &A,
-                                  Result value) {
-  auto TakenActionIndex = A.getIndex();
-  llvm::errs() << "Remembering value " << value << " at index " << A.getIndex()
-               << "\n";
+template <unsigned Size, class NetT>
+inline Batch<Result> DQNCoreImpl::maxImpl(const Batch<State> &S,
+                                          NetT &NeuralNet) const {
+  forward<Size>(S, NeuralNet);
 
-  Experience->addToExperience({S, TakenActionIndex, value});
+  Batch<Result> Results;
+
+  for (auto i : seq<unsigned>(0, Size)) {
+    Results.push_back(NeuralNet->blob_by_name("argmax")->data_at(i, 1, 0, 0));
+  }
+
+  return Results;
 }
 
-void DQNCoreImpl::experienceUpdate() {
-  auto ChunkOfExperience = Experience->replay();
-  if (ChunkOfExperience.empty()) {
-    return;
+template <unsigned Size, class NetT>
+inline Batch<Action> DQNCoreImpl::argmaxImpl(const Batch<State> &S,
+                                             NetT &NeuralNet) const {
+  forward<Size>(S, NeuralNet);
+
+  Batch<Action> Actions;
+
+  for (auto i : seq<unsigned>(0, Size)) {
+    auto index = NeuralNet->blob_by_name("argmax")->data_at(i, 0, 0, 0);
+    Actions.push_back(Action::getActionByIndex(index));
   }
-  loadData(ChunkOfExperience);
+
+  return Actions;
+}
+
+template <class NetT>
+inline DQNCoreImpl::Blob *DQNCoreImpl::getInput(NetT &NeuralNet,
+                                                const std::string &name) {
+  return NeuralNet->blob_by_name(name).get();
+}
+
+template <class NetT>
+inline Result *DQNCoreImpl::getInputArray(NetT &NeuralNet,
+                                          const std::string &name) {
+  return static_cast<Result *>(
+      NeuralNet->blob_by_name(name)->mutable_cpu_data());
+}
+
+template <unsigned Size>
+inline bool DQNCoreImpl::reshape(DQNCoreImpl::Blob *Input) {
+  if (Input->shape(0) != Size) {
+    Input->Reshape({Size, Input->shape(1)});
+    return true;
+  }
+  return false;
+}
+
+template <unsigned Size>
+inline bool DQNCoreImpl::reshapeRecurrentBlob(DQNCoreImpl::Blob *Input) {
+  if (Input->shape(1) != Size) {
+    Input->Reshape({Input->shape(0), Size});
+    return true;
+  }
+  return false;
+}
+
+void DQNCoreImpl::update(const State &S, const Action &A, Result value) {
+  // this implementation doesn't support non-minibatch update
+}
+
+void DQNCoreImpl::update(const Batch<State> &S, const Batch<Action> &A,
+                         Batch<Result> V) {
+  loadInputs<config::MinibatchSize>(S, LearningNet);
+
+  auto Actions = getInputArray(LearningNet, "data_action");
+  auto Outcomes = getInputArray(LearningNet, "value_input");
+
+  for (auto i : seq<unsigned>(0, config::MinibatchSize)) {
+    auto index = i * config::NumberOfActions + A[i].getIndex();
+    Actions[index] = 1;
+    Outcomes[index] = V[i];
+  }
+
   Solver->Step(1);
+
   llvm::errs() << "Loss = " << Loss->data_at(0, 0, 0, 0) << "\n";
 }
 
-void DQNCoreImpl::loadData(ExperienceReplay::RecalledExperience &Chunk) {
-  SmallVector<Result, config::MinibatchSize * config::NumberOfFeatures> States;
-
-  constexpr unsigned SizeOfActionsBlob =
-      config::MinibatchSize * config::NumberOfActions;
-  SmallVector<Result, SizeOfActionsBlob> Actions(SizeOfActionsBlob, 0.0);
-  SmallVector<Result, SizeOfActionsBlob> Outcomes(SizeOfActionsBlob, 0.0);
-
-  constexpr unsigned SizeOfContextsBlob =
-      config::MinibatchSize * config::ContextSize;
-  SmallVector<Result, SizeOfContextsBlob> Contexts(SizeOfContextsBlob, 0.0);
-
-  unsigned i = 0;
-  for (auto &Element : Chunk) {
-    States.append(Element.state.begin(), Element.state.end());
-    Actions[i * config::NumberOfActions + Element.actionIndex] = 1;
-    Outcomes[i * config::NumberOfActions + Element.actionIndex] = Element.value;
-    unsigned j = 0, k = 0, N = Element.state.getContext().size();
-    for (k = std::max(i, N - config::ContextSize); k < N; ++k, ++j) {
-      Contexts[i * config::MinibatchSize + j] =
-          Element.state.getContext()[k] + 1;
-    }
+void DQNCoreImpl::initializeLogger() {
+  static bool IsInitialized = false;
+  if (!IsInitialized) {
+    google::InitGoogleLogging("wazuhl");
+    google::SetStderrLogging(google::GLOG_FATAL);
+    IsInitialized = true;
   }
-
-  LearningNetInputState->Reset(States.data(), TrainDummy.data(),
-                               config::MinibatchSize);
-  LearningNetInputAction->Reset(Actions.data(), TrainDummy.data(),
-                                config::MinibatchSize);
-  LearningNetInputContext->Reset(Contexts.data(), ContextTrainDummy.data(),
-                                 SizeOfContextsBlob);
-  LearningNetInputClip->Reset(ClipTrainDummy.data(), ContextTrainDummy.data(),
-                              SizeOfContextsBlob);
-  LearningNetExpected->Reset(Outcomes.data(), TrainDummy.data(),
-                             config::MinibatchSize);
 }
 
 inline void DQNCoreImpl::initialize() {
-  google::InitGoogleLogging("wazuhl");
-  google::SetStderrLogging(google::GLOG_FATAL);
+  initializeLogger();
   caffe::Caffe::set_mode(caffe::Caffe::CPU);
   initializeSolver();
   initializeNets();
@@ -253,38 +365,14 @@ inline void DQNCoreImpl::initializeNets() {
 
 inline void DQNCoreImpl::initializeInputs() {
   ClipTestDummy[0] = 0;
-  for (auto i : seq<unsigned>(0, config::MinibatchSize)) {
-    ClipTrainDummy[i * config::ContextSize] = 0;
+  for (auto i : seq<unsigned>(0, config::ContextSize)) {
+    ClipTrainDummy[i * config::MinibatchSize] = 0;
   }
-
-  CalculatingNetInput = boost::static_pointer_cast<InputLayer>(
-      CalculatingNet->layer_by_name("live_input_state"));
-  CalculatingNetInputContext = boost::static_pointer_cast<InputLayer>(
-      CalculatingNet->layer_by_name("live_input_context"));
-  CalculatingNetInputClip = boost::static_pointer_cast<InputLayer>(
-      CalculatingNet->layer_by_name("live_input_clip"));
-
-  LearningNetInputState = boost::static_pointer_cast<InputLayer>(
-      LearningNet->layer_by_name("experience_replay_state"));
-  LearningNetInputAction = boost::static_pointer_cast<InputLayer>(
-      LearningNet->layer_by_name("experience_replay_action"));
-  LearningNetInputContext = boost::static_pointer_cast<InputLayer>(
-      LearningNet->layer_by_name("experience_replay_context"));
-  LearningNetInputClip = boost::static_pointer_cast<InputLayer>(
-      LearningNet->layer_by_name("experience_replay_clip"));
-  LearningNetExpected = boost::static_pointer_cast<InputLayer>(
-      LearningNet->layer_by_name("experience_replay_value"));
 }
 
 inline void DQNCoreImpl::initializeOutputs() {
   Output = CalculatingNet->blob_by_name("Q_values");
   Loss = LearningNet->blob_by_name("loss");
-}
-
-inline void DQNCoreImpl::lazyInitializeExperience() {
-  if (Experience.get())
-    return;
-  Experience = llvm::make_unique<ExperienceReplay>();
 }
 
 inline void DQNCoreImpl::loadTrainedNet() {

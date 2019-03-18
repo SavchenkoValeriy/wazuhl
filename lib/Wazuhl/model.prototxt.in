@@ -1,68 +1,55 @@
 name: "wazuhl_DQN"
+
 layer {
-  name: "experience_replay_state"
-  type: "MemoryData"
+  name: "state_input"
+  type: "Input"
   top: "data"
-  top: "redundant_train_1"
-  include {
-    phase: TRAIN
-  }
-  memory_data_param 
-  {
-    batch_size: ${MINIBATCH_SIZE}
-    channels: ${NUMBER_OF_FEATURES}
-    height: 1
-    width: 1
+  input_param {
+    shape {
+      dim: ${MINIBATCH_SIZE}
+      dim: ${NUMBER_OF_FEATURES}
+    }
   }
 }
+
 layer {
-  name: "experience_replay_action"
-  type: "MemoryData"
-  top: "data_action"
-  top: "redundant_train_2"
-  include {
-    phase: TRAIN
-  }
-  memory_data_param
-  {
-    batch_size: ${MINIBATCH_SIZE}
-    channels: ${NUMBER_OF_ACTIONS}
-    height: 1
-    width: 1
-  }
-}
-layer {
-  name: "experience_replay_context"
-  type: "MemoryData"
+  name: "context_input"
+  type: "Input"
   top: "context"
-  top: "redundant_train_3"
-  include {
-    phase: TRAIN
-  }
-  memory_data_param
-  {
-    batch_size: ${MINIBATCH_SIZE}
-    channels: 1
-    height: ${CONTEXT_SIZE}
-    width: 1
+  input_param {
+    shape {
+      dim: ${CONTEXT_SIZE}
+      dim: ${MINIBATCH_SIZE}
+    }
   }
 }
 layer {
-  name: "experience_replay_clip"
-  type: "MemoryData"
+  name: "clip_input"
+  type: "Input"
   top: "clip"
-  top: "redundant_train_4"
+  input_param {
+    shape {
+      dim: ${CONTEXT_SIZE}
+      dim: ${MINIBATCH_SIZE}
+    }
+  }
+}
+
+layer {
+  name: "action_input"
+  type: "Input"
+  top: "data_action"
+  input_param {
+    shape {
+      dim: ${MINIBATCH_SIZE}
+      dim: ${NUMBER_OF_ACTIONS}
+    }
+  }
   include {
     phase: TRAIN
   }
-  memory_data_param
-  {
-    batch_size: ${MINIBATCH_SIZE}
-    channels: 1
-    height: ${CONTEXT_SIZE}
-    width: 1
-  }
 }
+
 layer {
   name: "flatten"
   type: "Flatten"
@@ -72,56 +59,6 @@ layer {
     phase: TRAIN
   }
 }
-layer {
-  name: "live_input_state"
-  type: "MemoryData"
-  top: "data"
-  top: "redundant_test_1"
-  include {
-    phase: TEST
-  }
-  memory_data_param 
-  {
-    batch_size: 1
-    channels: ${NUMBER_OF_FEATURES}
-    height: 1
-    width: 1
-  }
-}
-layer {
-  name: "live_input_context"
-  type: "MemoryData"
-  top: "context"
-  top: "redundant_test_2"
-  include {
-    phase: TEST
-  }
-  memory_data_param 
-  {
-    batch_size: 1
-    channels: 1
-    height: ${CONTEXT_SIZE}
-    width: 1
-  }
-}
-
-layer {
-  name: "live_input_clip"
-  type: "MemoryData"
-  top: "clip"
-  top: "redundant_test_3"
-  include {
-    phase: TEST
-  }
-  memory_data_param 
-  {
-    batch_size: 1
-    channels: 1
-    height: ${CONTEXT_SIZE}
-    width: 1
-  }
-}
-
 
 layer {
   name: "flatten_context"
@@ -176,16 +113,20 @@ layer {
   top: "redundant_seq"
   top: "last_lstm"
   slice_param {
-    axis: 1
+    axis: 0
     slice_point: ${CONTEXT_LSTM_LAST_IDX}
   }
 }
 
 layer {
-  name: "flatten_lstm"
+  name: "reshaped_lstm"
   type: "Flatten"
   bottom: "last_lstm"
   top: "context_encoded"
+  flatten_param {
+    axis: 0
+    end_axis: 1
+  }
 }
 
 layer {
@@ -423,6 +364,19 @@ layer {
 }
 
 layer {
+  name: "argmax"
+  type: "ArgMax"
+  bottom: "Q_values"
+  top: "argmax"
+  argmax_param {
+    out_max_val: true
+  }
+  include: {
+    phase: TEST
+}
+}
+
+layer {
   name: "eltwise"
   type: "Eltwise"
   bottom: "Q_values"
@@ -437,50 +391,30 @@ layer {
 }
 
 layer {
-  name: "experience_replay_value"
-  type: "MemoryData"
-  top: "experience_replay_value"
-  top: "redundant_train_5"
+  name: "value_input"
+  type: "Input"
+  top: "value_input"
   include {
     phase: TRAIN
   }
-  memory_data_param
-  {
-    batch_size: ${MINIBATCH_SIZE}
-    channels: ${NUMBER_OF_ACTIONS}
-    height: 1
-    width: 1
+  input_param {
+    shape {
+      dim: ${MINIBATCH_SIZE}
+      dim: ${NUMBER_OF_ACTIONS}
+    }
   }
 }
 layer {
-  name: "silence_train"
+  name: "silence"
   type: "Silence"
-  bottom: "redundant_train_1"
-  bottom: "redundant_train_2"
-  bottom: "redundant_train_3"
-  bottom: "redundant_train_4"
-  bottom: "redundant_train_5"
   bottom: "redundant_seq"
-  include {
-    phase: TRAIN
-  }
 }
-layer {
-  name: "silence_test"
-  type: "Silence"
-  bottom: "redundant_test_1"
-  bottom: "redundant_test_2"
-  bottom: "redundant_test_3"
-  bottom: "redundant_seq"
-  include {
-    phase: TEST
-  }
-}
+
 layer {
   name: "loss"
   type: "EuclideanLoss"
   bottom: "filtered_Q_values"
-  bottom: "experience_replay_value"
+  bottom: "value_input"
   top: "loss"
   include {
     phase: TRAIN

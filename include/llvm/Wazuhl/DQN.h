@@ -32,7 +32,9 @@ public:
 
   void update(const State &S, const Action &A, Result value);
   void update(const Batch<State> &S, const Batch<Action> &A,
-              const Batch<Result> &value);
+              const Batch<Result> value);
+
+  void copyWeightsFrom(const DQNCore &);
 
   DQNCore();
   ~DQNCore();
@@ -42,6 +44,32 @@ private:
 };
 
 using DQN = rl::Q<DQNCore>;
+
+inline DQNCore::ResultsVector operator+(double RHS,
+                                        DQNCore::ResultsVector &&LHS) {
+  for (auto &i : LHS) {
+    i += RHS;
+  }
+  return std::move(LHS);
+}
+
+inline DQNCore::ResultsVector operator+(const DQNCore::ResultsVector &RHS,
+                                        DQNCore::ResultsVector &&LHS) {
+  assert(RHS.size() == LHS.size() &&
+         "Addition does only make sense for the same sized vectors!");
+  for (auto i : seq<unsigned>(0, RHS.size())) {
+    LHS[i] += RHS[i];
+  }
+  return std::move(LHS);
+}
+
+inline DQNCore::ResultsVector operator*(double RHS,
+                                        DQNCore::ResultsVector &&LHS) {
+  for (auto &i : LHS) {
+    i *= RHS;
+  }
+  return std::move(LHS);
+}
 } // namespace wazuhl
 } // namespace llvm
 

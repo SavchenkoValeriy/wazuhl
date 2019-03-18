@@ -53,13 +53,13 @@ public:
     }
 
   private:
-    CurriedQ(QCore *original, const State &s) : Original(original), S(s) {}
+    CurriedQ(QCore *original, const StateT &s) : Original(original), S(s) {}
 
-    CurriedQ(const QCore *original, const State &s)
+    CurriedQ(const QCore *original, const StateT &s)
         : Original(original), S(s) {}
 
     mutable QCore *Original;
-    const State &S;
+    const StateT &S;
 
     friend class Q<QCore>;
 
@@ -111,10 +111,13 @@ public:
   }
 
   Q() = default;
-  Q(const Q<QCore> &) = delete;
+  Q(const Q<QCore> &Source) { Original.copyWeightsFrom(Source.Original); }
   Q(Q<QCore> &&) = default;
 
-  Q<QCore> &operator=(const Q<QCore> &) = delete;
+  Q<QCore> &operator=(const Q<QCore> &Source) {
+    Original.copyWeightsFrom(Source.Original);
+    return *this;
+  }
   Q<QCore> &operator=(Q<QCore> &&) = default;
 
 private:
@@ -125,7 +128,7 @@ private:
   static Batch<Result> getValues(const Batch<ResultsVector> &V,
                                  const Batch<Action> &A) {
     Batch<Result> Values;
-    for (auto i : seq<unsigned>(V.size())) {
+    for (auto i : seq<unsigned>(0, V.size())) {
       Values.push_back(V[i][A[i].getIndex()]);
     }
     return Values;
