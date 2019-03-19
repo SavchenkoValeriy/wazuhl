@@ -51,13 +51,10 @@ public:
   StorageType::const_iterator end() const { return Storage.end(); }
 
   bool operator==(const StateFeatures &RHS) const {
-    return isInitialized() == RHS.isInitialized() and Storage == RHS.Storage;
+    return isInitialized() == RHS.isInitialized() and Storage == RHS.Storage and
+           Context == RHS.Context;
   }
   bool operator!=(const StateFeatures &RHS) const { return !(*this == RHS); }
-
-  bool operator<(const StateFeatures &RHS) const {
-    return Storage < RHS.Storage;
-  }
 
   StorageType::reference operator[](unsigned idx) { return Storage[idx]; }
 
