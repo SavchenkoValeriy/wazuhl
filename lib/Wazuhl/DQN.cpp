@@ -96,6 +96,8 @@ private:
   template <unsigned Size, class NetT>
   inline Batch<Action> argmaxImpl(const Batch<State> &S, NetT &NeuralNet) const;
 
+  template <unsigned Size> inline Batch<State> &getCache() const;
+
   template <class NetT>
   inline static Blob *getInput(NetT &NeuralNet, const std::string &name);
   template <class NetT>
@@ -111,7 +113,7 @@ private:
   SolverTy Solver;
   BlobS Output, Loss;
 
-  mutable State LastState;
+  mutable Batch<State> LastState, LastBatchOfStates;
   mutable ResultsVector LastResultsVector;
 };
 
@@ -155,8 +157,16 @@ DQNCore::~DQNCore() = default;
 
 template <unsigned Size, class NetT>
 inline void DQNCoreImpl::forward(const Batch<State> &S, NetT &NeuralNet) const {
+  auto &Cache = getCache<Size>();
+
+  // we just loaded and forwarded exactly this state!
+  if (Cache == S) {
+    return;
+  }
+
   loadInputs<Size>(S, NeuralNet);
   NeuralNet->Forward();
+  Cache = S;
 }
 
 template <unsigned Size, class NetT>
@@ -269,6 +279,15 @@ inline Batch<Action> DQNCoreImpl::argmaxImpl(const Batch<State> &S,
   }
 
   return Actions;
+}
+
+template <> inline Batch<State> &DQNCoreImpl::getCache<1>() const {
+  return LastState;
+}
+
+template <>
+inline Batch<State> &DQNCoreImpl::getCache<config::MinibatchSize>() const {
+  return LastBatchOfStates;
 }
 
 template <class NetT>
