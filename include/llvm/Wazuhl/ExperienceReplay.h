@@ -18,18 +18,23 @@ public:
   ~ExperienceReplay();
 
   using State = DQNCore::State;
+  using Action = DQNCore::Action;
   using Result = DQNCore::Result;
+  template <class T> using Batch = DQNCore::Batch<T>;
 
-  struct ExperienceUnit {
-    State state;
-    unsigned actionIndex;
-    Result value;
+  struct RecalledExperience {
+    Batch<State> S;
+    Batch<Action> A;
+    Batch<Result> R;
+    Batch<State> newS;
+    Batch<bool> isTerminal;
+
+    unsigned size() { return S.size(); }
   };
 
-  using RecalledExperience = SmallVector<ExperienceUnit, config::MinibatchSize>;
-
-  void addToExperience(ExperienceUnit);
-  RecalledExperience replay();
+  void push(const State &, const Action &, Result R, const State &);
+  RecalledExperience sample();
+  bool isBigEnoughForReplay();
 
 private:
   std::unique_ptr<ExperienceReplayImpl> pImpl;

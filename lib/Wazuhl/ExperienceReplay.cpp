@@ -20,11 +20,17 @@ using bsoncxx::document::view;
 using mongocxx::pipeline;
 
 namespace {
-using ExperienceUnit = llvm::wazuhl::ExperienceReplay::ExperienceUnit;
-using StateType = llvm::wazuhl::ExperienceReplay::State;
-using ResultType = llvm::wazuhl::ExperienceReplay::Result;
+using State = llvm::wazuhl::ExperienceReplay::State;
+using Action = llvm::wazuhl::ExperienceReplay::Action;
+using Result = llvm::wazuhl::ExperienceReplay::Result;
 using RecalledExperience = llvm::wazuhl::ExperienceReplay::RecalledExperience;
 using MongifiedExperience = bsoncxx::document::value;
+struct ExperienceUnit {
+  State state;
+  unsigned actionIndex;
+  Result value;
+  State newState;
+};
 
 mongocxx::instance instance{};
 
@@ -72,15 +78,19 @@ public:
 
   ~ExperienceReplayImpl();
 
-  void addToExperience(ExperienceUnit);
-  RecalledExperience replay();
+  void push(const State &S, const Action &A, Result R, const State &newS);
+  RecalledExperience sample();
+  bool isBigEnoughForReplay();
 
 private:
   void initialize();
   void createCollection(mongocxx::collection &collection,
                         const std::string &name, bool capped);
 
-  void uploadRecordedTrace();
+  void uploadApprovedExperience();
+  void uploadExperienceWaitingForApproval();
+
+  void uploadExperienceImpl(mongocxx::collection &collection, bool isTerminal);
 
   mongocxx::client MongoClient{mongocxx::uri{"mongodb://mongo:27017"}};
   mongocxx::database ExternalMemory;
@@ -88,22 +98,33 @@ private:
   mongocxx::collection RecordsWaitingForApproval;
 
   // it should be at least one action taken (terminal)
-  static constexpr unsigned TraceLength = 100;
-  SmallVector<ExperienceUnit, TraceLength> RecordedTrace;
+  ExperienceUnit LastExperience{};
 };
+
+//===----------------------------------------------------------------------===//
+//                    Original class methods implementation
+//===----------------------------------------------------------------------===//
 
 ExperienceReplay::ExperienceReplay()
     : pImpl(llvm::make_unique<ExperienceReplayImpl>()) {}
 ExperienceReplay::~ExperienceReplay() = default;
 
-void ExperienceReplay::addToExperience(
-    ExperienceReplay::ExperienceUnit toRemember) {
-  pImpl->addToExperience(toRemember);
+void ExperienceReplay::push(const State &S, const Action &A, Result R,
+                            const State &newS) {
+  pImpl->push(S, A, R, newS);
 }
 
-ExperienceReplay::RecalledExperience ExperienceReplay::replay() {
-  return pImpl->replay();
+ExperienceReplay::RecalledExperience ExperienceReplay::sample() {
+  return pImpl->sample();
 }
+
+bool ExperienceReplay::isBigEnoughForReplay() {
+  return pImpl->isBigEnoughForReplay();
+}
+
+//===----------------------------------------------------------------------===//
+//                         Implementation class methods
+//===----------------------------------------------------------------------===//
 
 ExperienceReplayImpl::ExperienceReplayImpl() { initialize(); }
 
@@ -142,49 +163,60 @@ void ExperienceReplayImpl::createCollection(mongocxx::collection &collection,
   collection = ExternalMemory.collection(name);
 }
 
-void ExperienceReplayImpl::addToExperience(ExperienceUnit toRemember) {
-  RecordedTrace.emplace_back(std::move(toRemember));
+void ExperienceReplayImpl::push(const State &S, const Action &A, Result R,
+                                const State &newS) {
+  uploadApprovedExperience();
+  LastExperience = {S, A.getIndex(), R, newS};
 }
 
-void ExperienceReplayImpl::uploadRecordedTrace() {
-  if (RecordedTrace.empty()) {
+void ExperienceReplayImpl::uploadApprovedExperience() {
+  uploadExperienceImpl(ApprovedRecords, false);
+}
+
+void ExperienceReplayImpl::uploadExperienceWaitingForApproval() {
+  uploadExperienceImpl(RecordsWaitingForApproval, true);
+}
+
+void ExperienceReplayImpl::uploadExperienceImpl(
+    mongocxx::collection &collection, bool isTerminal) {
+  const auto &S = LastExperience.state;
+  const auto A = LastExperience.actionIndex;
+  const auto R = LastExperience.value;
+  const auto &NewS = LastExperience.newState;
+
+  if (not S.isInitialized()) {
     return;
   }
 
   auto ExperienceRecord = document{};
 
-  auto array = ExperienceRecord << "trace" << open_array;
+  addArray<double>(ExperienceRecord, "state", S);
+  addArray<int>(ExperienceRecord, "context", S.getContext());
+  ExperienceRecord << "reward" << R;
+  ExperienceRecord << "index" << (int)A;
+  ExperienceRecord << "isTerminal" << isTerminal;
+  addArray<double>(ExperienceRecord, "newState", NewS);
+  addArray<int>(ExperienceRecord, "newContext", NewS.getContext());
 
-  for (auto &Experience : RecordedTrace) {
-    const auto &State = Experience.state;
-    const auto Index = Experience.actionIndex;
-    const auto Value = Experience.value;
-
-    auto object = array << open_document;
-
-    addArray<double>(object, "state", State);
-    addArray<int>(object, "context", State.getContext());
-    object << "value" << Value;
-    object << "index" << (int)Index;
-
-    object << close_document;
-  }
-
-  array << close_array;
-
-  RecordsWaitingForApproval.insert_one(ExperienceRecord.view());
+  collection.insert_one(ExperienceRecord.view());
 }
 
-ExperienceReplayImpl::~ExperienceReplayImpl() { uploadRecordedTrace(); }
+ExperienceReplayImpl::~ExperienceReplayImpl() {
+  uploadExperienceWaitingForApproval();
+}
 
-RecalledExperience ExperienceReplayImpl::replay() {
-  RecalledExperience Result;
+bool ExperienceReplayImpl::isBigEnoughForReplay() {
+  return ApprovedRecords.count_documents({}) >= config::MinimalExperienceSize;
+}
+
+RecalledExperience ExperienceReplayImpl::sample() {
+  RecalledExperience Sample;
   // Wazuhl doesn't have enough experience to even start
   // the learning process
   constexpr unsigned MinimalSizeForDB = 300;
   if (ApprovedRecords.count_documents({}) <
       std::max(MinimalSizeForDB, config::MinibatchSize))
-    return Result;
+    return Sample;
 
   // Randomly choose MinibatchSize number of experience entries
   auto SampleQuery = pipeline{};
@@ -193,18 +225,27 @@ RecalledExperience ExperienceReplayImpl::replay() {
   auto Cursor = ApprovedRecords.aggregate(SampleQuery);
 
   for (auto doc : Cursor) {
-    StateType state;
-    fillStateArray(state, "state", doc);
-    fillContextArray(state.getContext(), "context", doc);
-    ResultType value = doc["value"].get_double();
+    State S, newS;
+
+    fillStateArray(S, "state", doc);
+    fillContextArray(S.getContext(), "context", doc);
+    Result reward = doc["reward"].get_double();
     unsigned index = static_cast<unsigned>(doc["index"].get_int32());
-    Result.push_back({state, index, value});
-    if (Result.size() == config::MinibatchSize) {
+    bool isTerminal = doc["isTerminal"].get_bool();
+    fillStateArray(newS, "newState", doc);
+    fillContextArray(newS.getContext(), "newContext", doc);
+
+    Sample.S.emplace_back(std::move(S));
+    Sample.A.emplace_back(Action::getActionByIndex(index));
+    Sample.R.push_back(reward);
+    Sample.newS.emplace_back(std::move(newS));
+    Sample.isTerminal.push_back(isTerminal);
+    if (Sample.S.size() == config::MinibatchSize) {
       break;
     }
   }
 
-  return Result;
+  return Sample;
 }
 } // namespace wazuhl
 } // namespace llvm

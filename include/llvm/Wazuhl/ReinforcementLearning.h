@@ -60,10 +60,146 @@ template <template <class...> class Learner, class EnvironmentT,
           class FunctionT, class PolicyT, class... Args>
 Learner<EnvironmentT, FunctionT, PolicyT>
 createLearner(EnvironmentT &Environment, FunctionT &ValueFunction,
-              const PolicyT &Policy, Args... args) {
-  return Learner<EnvironmentT, FunctionT, PolicyT>{Environment, ValueFunction,
-                                                   Policy, args...};
+              const PolicyT &Policy, Args &&... args) {
+  return Learner<EnvironmentT, FunctionT, PolicyT>{
+      Environment, ValueFunction, Policy, std::forward<Args>(args)...};
 }
+
+template <template <class...> class Learner, class EnvironmentT,
+          class FunctionT, class PolicyT, class MemoryT, class... Args>
+Learner<EnvironmentT, FunctionT, PolicyT, MemoryT>
+createDeepLearner(EnvironmentT &Environment, FunctionT &ValueFunction,
+                  const PolicyT &Policy, MemoryT &Memory, Args &&... args) {
+  return Learner<EnvironmentT, FunctionT, PolicyT, MemoryT>{
+      Environment, ValueFunction, Policy, Memory, std::forward<Args>(args)...};
+}
+
+template <class EnvironmentT, class QType, class PolicyT, class MemoryT>
+class DeepQLearning {
+public:
+  using Action = typename EnvironmentT::Action;
+  using State = typename EnvironmentT::State;
+  DeepQLearning(EnvironmentT &Environment, QType &Q, const PolicyT &Policy,
+                MemoryT &Memory, double gamma, unsigned C)
+      : Environment(Environment), Q(Q), Target(Q), Policy(Policy),
+        Memory(Memory), gamma(gamma), C(C) {}
+
+  void learn() {
+    State S = Environment.getState();
+    unsigned UpdateCounter = 0;
+
+    while (!Environment.isInTerminalState()) {
+      Action A = Policy.pick(S);
+      llvm::errs() << "Wazuhl prefers '" << argmax(Q(S)).getName()
+                   << "' with value " << max(Q(S)) << "\n";
+
+      Environment.takeAction(A);
+      State newS = Environment.getState();
+      auto R = Environment.getReward();
+
+      Memory.push(S, A, R, newS);
+
+      S = newS;
+
+      if (Memory.isBigEnoughForReplay()) {
+        auto Experience = Memory.sample();
+
+        auto &Ss = Experience.S;
+        auto &As = Experience.A;
+        auto &Rs = Experience.R;
+        auto &newSs = Experience.newS;
+
+        auto Ys = Rs + gamma * max(Target(newSs));
+
+        for (auto i : seq<unsigned>(0, Experience.size())) {
+          if (Experience.isTerminal[i]) {
+            llvm::errs() << "Wazuhl has a terminal state in a batch! (" << Rs[i]
+                         << ")\n";
+            Ys[i] = Rs[i];
+          }
+        }
+        Q(Ss, As) = Ys;
+      }
+
+      if (UpdateCounter++ % C == 0) {
+        Target = Q;
+      }
+    }
+  }
+
+private:
+  EnvironmentT &Environment;
+  QType &Q;
+  QType Target;
+  const PolicyT &Policy;
+  MemoryT &Memory;
+  double gamma;
+  const unsigned C;
+};
+
+template <class EnvironmentT, class QType, class PolicyT, class MemoryT>
+class DeepDoubleQLearning {
+public:
+  using Action = typename EnvironmentT::Action;
+  using State = typename EnvironmentT::State;
+  DeepDoubleQLearning(EnvironmentT &Environment, QType &Q,
+                      const PolicyT &Policy, MemoryT &Memory, double gamma,
+                      unsigned C)
+      : Environment(Environment), Q(Q), Target(Q), Policy(Policy),
+        Memory(Memory), gamma(gamma), C(C) {}
+
+  void learn() {
+    State S = Environment.getState();
+    unsigned UpdateCounter = 0;
+
+    while (!Environment.isInTerminalState()) {
+      Action A = Policy.pick(S);
+      llvm::errs() << "Wazuhl prefers '" << argmax(Q(S)).getName()
+                   << "' with value " << max(Q(S)) << "\n";
+
+      Environment.takeAction(A);
+      State newS = Environment.getState();
+      auto R = Environment.getReward();
+
+      Memory.push(S, A, R, newS);
+
+      S = newS;
+
+      if (Memory.isBigEnoughForReplay()) {
+        auto Experience = Memory.sample();
+
+        auto &Ss = Experience.S;
+        auto &As = Experience.A;
+        auto &Rs = Experience.R;
+        auto &newSs = Experience.newS;
+
+        auto Ys = Rs + gamma * Q(newSs, argmax(Target(newSs)));
+
+        for (auto i : seq<unsigned>(0, Experience.size())) {
+          if (Experience.isTerminal[i]) {
+            llvm::errs() << "Wazuhl has a terminal state in a batch! (" << Rs[i]
+                         << ")\n";
+            Ys[i] = Rs[i];
+          }
+        }
+        Q(Ss, As) = Ys;
+      }
+
+      if (UpdateCounter++ % C == 0) {
+        Target = Q;
+      }
+    }
+  }
+
+private:
+  EnvironmentT &Environment;
+  QType &Q;
+  QType Target;
+  const PolicyT &Policy;
+  MemoryT &Memory;
+  double gamma;
+  const unsigned C;
+};
 
 namespace policies {
 template <class Function> class Greedy {
