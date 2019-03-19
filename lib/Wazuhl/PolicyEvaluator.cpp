@@ -1,6 +1,7 @@
 #include "llvm/Wazuhl/PolicyEvaluator.h"
 #include "llvm/Wazuhl/DQN.h"
 #include "llvm/Wazuhl/Environment.h"
+#include "llvm/Wazuhl/ExperienceReplay.h"
 #include "llvm/Wazuhl/ReinforcementLearning.h"
 
 namespace llvm {
@@ -8,76 +9,76 @@ namespace wazuhl {
 namespace {
 std::vector<PassAction> getO2Actions() {
   constexpr auto names = {"forceattrs",
-                                        "inferattrs",
-                                        "simplify-cfg",
-                                        "sroa",
-                                        "early-cse",
-                                        "lower-expect",
-                                        "gvn-hoist",
-                                        "ipsccp",
-                                        "globalopt",
-                                        "mem2reg",
-                                        "deadargelim",
-                                        "instcombine",
-                                        "simplify-cfg",
-                                        "globals-aa",
-                                        "inline",
-                                        "function-attrs",
-                                        "sroa",
-                                        "early-cse",
-                                        "speculative-execution",
-                                        "jump-threading",
-                                        "correlated-propagation",
-                                        "simplify-cfg",
-                                        "instcombine",
-                                        "libcalls-shrinkwrap",
-                                        "tailcallelim",
-                                        "simplify-cfg",
-                                        "reassociate",
-                                        "opt-remark-emit",
-                                        "rotate",
-                                        "licm",
-                                        "simplify-cfg",
-                                        "instcombine",
-                                        "indvars",
-                                        "loop-idiom",
-                                        "loop-deletion",
-                                        "unroll-full",
-                                        "mldst-motion",
-                                        "gvn",
-                                        "memcpyopt",
-                                        "ipsccp",
-                                        "bdce",
-                                        "instcombine",
-                                        "jump-threading",
-                                        "correlated-propagation",
-                                        "dse",
-                                        "licm",
-                                        "adce",
-                                        "simplify-cfg",
-                                        "instcombine",
-                                        "elim-avail-extern",
-                                        "rpo-functionattrs",
-                                        "globals-aa",
-                                        "float2int",
-                                        "rotate",
-                                        "loop-distribute",
-                                        "loop-vectorize",
-                                        "loop-load-elim",
-                                        "instcombine",
-                                        "slp-vectorizer",
-                                        "simplify-cfg",
-                                        "instcombine",
-                                        "unroll",
-                                        "instcombine",
-                                        "opt-remark-emit",
-                                        "licm",
-                                        "alignment-from-assumptions",
-                                        "loop-sink",
-                                        "instsimplify",
-                                        "globaldce",
-                                        "constmerge",
-                                        "terminal"};
+                          "inferattrs",
+                          "simplify-cfg",
+                          "sroa",
+                          "early-cse",
+                          "lower-expect",
+                          "gvn-hoist",
+                          "ipsccp",
+                          "globalopt",
+                          "mem2reg",
+                          "deadargelim",
+                          "instcombine",
+                          "simplify-cfg",
+                          "globals-aa",
+                          "inline",
+                          "function-attrs",
+                          "sroa",
+                          "early-cse",
+                          "speculative-execution",
+                          "jump-threading",
+                          "correlated-propagation",
+                          "simplify-cfg",
+                          "instcombine",
+                          "libcalls-shrinkwrap",
+                          "tailcallelim",
+                          "simplify-cfg",
+                          "reassociate",
+                          "opt-remark-emit",
+                          "rotate",
+                          "licm",
+                          "simplify-cfg",
+                          "instcombine",
+                          "indvars",
+                          "loop-idiom",
+                          "loop-deletion",
+                          "unroll-full",
+                          "mldst-motion",
+                          "gvn",
+                          "memcpyopt",
+                          "ipsccp",
+                          "bdce",
+                          "instcombine",
+                          "jump-threading",
+                          "correlated-propagation",
+                          "dse",
+                          "licm",
+                          "adce",
+                          "simplify-cfg",
+                          "instcombine",
+                          "elim-avail-extern",
+                          "rpo-functionattrs",
+                          "globals-aa",
+                          "float2int",
+                          "rotate",
+                          "loop-distribute",
+                          "loop-vectorize",
+                          "loop-load-elim",
+                          "instcombine",
+                          "slp-vectorizer",
+                          "simplify-cfg",
+                          "instcombine",
+                          "unroll",
+                          "instcombine",
+                          "opt-remark-emit",
+                          "licm",
+                          "alignment-from-assumptions",
+                          "loop-sink",
+                          "instsimplify",
+                          "globaldce",
+                          "constmerge",
+                          "terminal"};
   std::vector<PassAction> actions;
   actions.reserve(names.size());
   for (const auto &name : names) {
@@ -97,17 +98,11 @@ void PolicyEvaluator::evaluate() {
 
 void LearningPolicyEvaluator::evaluate() {
   DQN Q;
-  if (config::UseRepeatingPolicy) {
-    rl::policies::Repeating<DQN> policy{Q, getO2Actions()};
-    auto learner =
-        rl::createLearner<rl::QLearning>(OptimizationEnv, Q, policy, 1.0, 0.99);
-    learner.learn();
-  } else {
-    rl::policies::EpsilonGreedy<DQN> policy{0.7, Q};
-    auto learner =
-        rl::createLearner<rl::QLearning>(OptimizationEnv, Q, policy, 1.0, 0.99);
-    learner.learn();
-  }
+  ExperienceReplay Memory;
+  rl::policies::EpsilonGreedy<DQN> policy{0.9, Q};
+  auto learner = rl::createDeepLearner<rl::DeepDoubleQLearning>(
+      OptimizationEnv, Q, policy, Memory, 0.99, (unsigned)10);
+  learner.learn();
 }
 } // namespace wazuhl
 } // namespace llvm
