@@ -24,6 +24,8 @@ constexpr unsigned NumberOfIRFeatures = NumberOfRawIRFeatures * 8,
                    NumberOfFeatures = NumberOfIRFeatures * 2 + 1,
                    ExperienceSize = ${EXPERIENCE_SIZE},
                    ContextSize = ${CONTEXT_SIZE};
+
+constexpr bool UseRepeatingPolicy = ${USE_REPEATING_POLICY};
 } // namespace config
 } // namespace wazuhl
 } // namespace llvm

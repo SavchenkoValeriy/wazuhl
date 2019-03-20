@@ -58,6 +58,8 @@ math(EXPR CONTEXT_ALPHABET_SIZE "${NUMBER_OF_ACTIONS}+1")
 set(CONTEXT_EMBEDDING_SIZE 16)
 set(CONTEXT_LSTM_SIZE 32)
 
+set(USE_REPEATING_POLICY 1)
+
 configure_file(
   ${LLVM_MAIN_INCLUDE_DIR}/llvm/Wazuhl/Config.h.in
   ${LLVM_INCLUDE_DIR}/llvm/Wazuhl/Config.h

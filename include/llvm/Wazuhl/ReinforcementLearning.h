@@ -89,6 +89,23 @@ public:
   }
 };
 
+template <class Function> class Repeating {
+public:
+  using Action = typename Function::Action;
+  using State = typename Function::State;
+
+  Repeating(const Function &valueFunction,
+            const std::vector<Action> &&plannedActions)
+      : value(valueFunction), actions(std::move(plannedActions)),
+        nextActionIndex(0) {}
+  Action pick(const State &s) const { return actions[nextActionIndex++]; }
+
+private:
+  const Function &value;
+  const std::vector<Action> actions;
+  mutable unsigned nextActionIndex;
+};
+
 template <class Function>
 class EpsilonGreedy : private Greedy<Function>, private Random<Function> {
 public:
@@ -106,6 +123,7 @@ public:
 private:
   double epsilon;
 };
+
 } // namespace policies
 } // namespace rl
 } // namespace wazuhl

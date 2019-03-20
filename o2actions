@@ -1,0 +1,71 @@
+forceattrs
+inferattrs
+simplify-cfg
+sroa
+early-cse
+lower-expect
+gvn-hoist
+ipsccp
+globalopt
+mem2reg
+deadargelim
+instcombine
+simplify-cfg #after that comes PGOIndirectCallPromotion()
+globals-aa
+inline
+function-attrs # here we start function simplification pipeline
+sroa
+early-cse
+speculative-execution
+jump-threading
+correlated-propagation
+simplify-cfg
+instcombine
+libcalls-shrinkwrap #only if optimizing for size
+tailcallelim
+simplify-cfg
+reassociate # after that loop optimization starts
+opt-remark-emit
+rotate
+licm
+simplify-cfg
+instcombine
+indvars
+loop-idiom
+loop-deletion
+unroll-full # finished loops
+mldst-motion
+gvn
+memcpyopt
+ipsccp
+bdce
+instcombine
+jump-threading
+correlated-propagation
+dse
+licm
+adce
+simplify-cfg
+instcombine # function optimization ends, here comes devirs pass if needed
+elim-avail-extern
+rpo-functionattrs
+globals-aa
+float2int
+rotate
+loop-distribute
+loop-vectorize
+loop-load-elim
+instcombine
+slp-vectorizer
+simplify-cfg
+instcombine
+unroll
+instcombine
+opt-remark-emit
+licm
+alignment-from-assumptions
+loop-sink
+instsimplify
+globaldce
+constmerge
+terminal
