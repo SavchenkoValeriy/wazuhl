@@ -166,6 +166,7 @@ inline void DQNCoreImpl::forward(const Batch<State> &S, NetT &NeuralNet) const {
 
   loadInputs<Size>(S, NeuralNet);
   NeuralNet->Forward();
+
   Cache = S;
 }
 
@@ -196,11 +197,11 @@ inline void DQNCoreImpl::loadInputs(const Batch<State> &S,
     }
 
     for (auto j : seq<unsigned>(0, config::ContextSize)) {
-      Contexts[i * config::ContextSize + j] = 0;
+      Contexts[j * Size + i] = 0;
     }
 
     unsigned j = 0, k = 0, N = StateRef.getContext().size();
-    for (k = std::max(i, N - config::ContextSize); k < N; ++k, ++j) {
+    for (k = std::max<int>(j, N - config::ContextSize); k < N; ++k, ++j) {
       Contexts[j * Size + i] = StateRef.getContext()[k] + 1;
     }
   }
@@ -384,8 +385,8 @@ inline void DQNCoreImpl::initializeNets() {
 
 inline void DQNCoreImpl::initializeInputs() {
   ClipTestDummy[0] = 0;
-  for (auto i : seq<unsigned>(0, config::ContextSize)) {
-    ClipTrainDummy[i * config::MinibatchSize] = 0;
+  for (auto i : seq<unsigned>(0, config::MinibatchSize)) {
+    ClipTrainDummy[i] = 0;
   }
 }
 
