@@ -16,7 +16,7 @@ VOLUME /wazuhl
 VOLUME /wazuhl-build
 VOLUME /suites
 
-ADD caffe /caffe
+ADD libtorch /libtorch
 ADD mongo-c-driver-1.13.0 /mongo-c-driver-1.13.0
 ADD mongo-cxx-driver /mongo-cxx-driver
 
@@ -32,34 +32,19 @@ RUN apt-get update && apt-get install -y python3-numpy python3-scipy
 RUN apt-get install -y libopencv* opencv*
 RUN apt-get update && apt-get install -y python-opencv
 
-ENV LD_LIBRARY_PATH="/usr/local/lib/:/caffe/build/lib/:"
-
-# Install caffe.
-WORKDIR /caffe
-RUN mkdir build
-WORKDIR /caffe/build
-RUN cmake ..
-RUN make all
-RUN make install
-RUN make runtest
-
-# Generate proto for wazuhl build.
-WORKDIR /caffe
-RUN protoc src/caffe/proto/caffe.proto --cpp_out=.
-RUN mkdir include/caffe/proto
-RUN mv src/caffe/proto/caffe.pb.h include/caffe/proto
+ENV LD_LIBRARY_PATH="/usr/local/lib/:/libtorch/lib/:"
 
 # Mongo.
 RUN apt-get update && apt-get install -y cmake libssl-dev libsasl2-dev
 WORKDIR /mongo-c-driver-1.13.0
 RUN mkdir cmake-build
 WORKDIR /mongo-c-driver-1.13.0/cmake-build
-RUN cmake -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF ..
+RUN CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0" cmake -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF ..
 RUN make
 RUN make install
 
 WORKDIR /mongo-cxx-driver/build
-RUN cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local ..
+RUN CXXFLAGS="-D_GLIBCXX_USE_CXX11_ABI=0" cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local ..
 RUN make EP_mnmlstc_core
 RUN make
 RUN make install

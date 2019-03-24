@@ -11,7 +11,7 @@ services:
     ports:
       - '8084:8080'
     environment:
-      LD_LIBRARY_PATH: "/usr/local/lib/:/caffe/build/lib/:"
+      LD_LIBRARY_PATH: "/usr/local/lib/:/libtorch/lib/:"
     cap_add:
       - SYS_PTRACE
     depends_on: ['mongo']

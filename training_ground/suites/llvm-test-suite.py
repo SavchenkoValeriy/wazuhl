@@ -52,7 +52,9 @@ class Suite:
         results = re.findall(pattern, output)
         self.tests = [Test(os.path.join(self.build, test), self) for test in results]
         logging.info("Len tests (all): {}".format(len(self.tests)))
-        self.tests = [test for test in self.tests if "Benchmark" in test.path]
+        self.tests = [test for test in self.tests if
+                      ("SingleSource/Benchmarks" in test.path or
+                       "MultiSource/Benchmarks" in test.path)]
         logging.info("Len tests (benchmark): {}".format(len(self.tests)))
 
     def go_to_builddir(self):
@@ -79,12 +81,7 @@ class Test:
         with open(os.devnull, 'wb') as devnull:
             make_command = ['make', '-j1', self.name]
             logging.debug(make_command)
-            make_output = subprocess.run(make_command,  env=self.suite.configuration_env,
-                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            logging.debug(make_output)
-            logging.debug("reading output")
-            out = make_output.stdout.decode('utf-8')
-            logging.debug(out)
+            subprocess.run(make_command,  env=self.suite.configuration_env)
 
     def run(self):
         if self.suite.fake_run:

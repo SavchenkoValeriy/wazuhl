@@ -12,21 +12,25 @@ StringRef getCaffeSolverPath();
 StringRef getWazuhlConfigPath();
 StringRef getTrainedNetFile();
 
-constexpr unsigned MinibatchSize = ${MINIBATCH_SIZE};
+constexpr unsigned MinibatchSize = 32;
 #define LAST_OTHER_INST(num) constexpr auto NumberOfRawIRFeatures = num;
 #include "llvm/IR/Instruction.def"
 
-constexpr unsigned NumberOfIRFeatures = NumberOfRawIRFeatures * 8,
+constexpr unsigned NumberOfIRFeatures = NumberOfRawIRFeatures * 4,
                    DiffIRFeaturesOffset = NumberOfIRFeatures,
                    TimeIndex = NumberOfIRFeatures * 2,
-                   ActionOffset = TimeIndex + 1,
-                   NumberOfActions = ${NUMBER_OF_ACTIONS},
+                   ActionOffset = TimeIndex + 1, NumberOfActions = 107,
                    NumberOfFeatures = NumberOfIRFeatures * 2 + 1,
-                   ExperienceSize = ${EXPERIENCE_SIZE},
-                   MinimalExperienceSize = ${MINIMAL_EXPERIENCE_SIZE},
-                   ContextSize = ${CONTEXT_SIZE};
+                   ExperienceSize = 3000, MinimalExperienceSize = 1000,
+                   ContextSize = 30, ContextEmbeddingSize = 8,
+                   ContextLSTMSize = 32, ActionHiddenSize = 128,
+                   EncodedIRFeaturesSize = 64,
+                   EncodedStateSize = EncodedIRFeaturesSize + ContextLSTMSize;
 
-constexpr bool UseRepeatingPolicy = ${USE_REPEATING_POLICY};
+constexpr auto EncoderLayerSizes = {128, 64};
+
+constexpr bool UseRepeatingPolicy = false;
+
 } // namespace config
 } // namespace wazuhl
 } // namespace llvm

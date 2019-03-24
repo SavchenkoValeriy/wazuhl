@@ -17,7 +17,7 @@ class DQNCore {
 public:
   using State = StateFeatures;
   using Action = PassAction;
-  using Result = double;
+  using Result = float;
   template <class T> using Vector = std::vector<T>;
   using ResultsVector = Vector<Result>;
   template <class T> using Batch = std::vector<T>;

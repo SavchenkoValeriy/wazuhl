@@ -101,8 +101,7 @@ FeatureVector RawIRFeatures::operator/(const RawIRFeatures &RHS) const {
     Functions.push_back(std::make_pair(FJ->second, FI.second));
   }
 
-  SmallVector<double, AverageNumberOfFunctions> DistOverallScaled,
-      DistSingleScaled;
+  SmallVector<double, AverageNumberOfFunctions> DistSingleScaled;
   double SingleScaler = 1, OverallScaler = 1;
   for (auto i : seq<unsigned>(0, config::NumberOfRawIRFeatures)) {
     for (auto Pair : Functions) {
@@ -114,16 +113,9 @@ FeatureVector RawIRFeatures::operator/(const RawIRFeatures &RHS) const {
       }
 
       DistSingleScaled.push_back(Matrix[Pair.first][i] / SingleScaler);
-      DistOverallScaled.push_back(Matrix[Pair.first][i] / OverallScaler);
     }
 
-    auto OverallStats = Stats::calculate(DistOverallScaled);
     auto SingleStats = Stats::calculate(DistSingleScaled);
-
-    Result.push_back(OverallStats.min);
-    Result.push_back(OverallStats.max);
-    Result.push_back(OverallStats.mean);
-    Result.push_back(OverallStats.variance);
 
     Result.push_back(SingleStats.min);
     Result.push_back(SingleStats.max);
@@ -131,7 +123,6 @@ FeatureVector RawIRFeatures::operator/(const RawIRFeatures &RHS) const {
     Result.push_back(SingleStats.variance);
 
     DistSingleScaled.clear();
-    DistOverallScaled.clear();
   }
 
   return Result;

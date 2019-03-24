@@ -755,6 +755,8 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 include_directories( ${LLVM_INCLUDE_DIR} ${LLVM_MAIN_INCLUDE_DIR})
 
+find_package(Torch REQUIRED)
+
 # when crosscompiling import the executable targets from a file
 if(LLVM_USE_HOST_TOOLS)
   include(CrossCompile)
@@ -902,6 +904,9 @@ endif()
 if (LLVM_INCLUDE_DOCS)
   add_subdirectory(docs)
 endif()
+
+install(TARGETS caffe2_library EXPORT LLVMExports)
+set_property(GLOBAL APPEND PROPERTY LLVM_EXPORTS caffe2_library)
 
 add_subdirectory(cmake/modules)
 

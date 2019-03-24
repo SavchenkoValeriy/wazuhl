@@ -1,13 +1,14 @@
 #include "llvm/Wazuhl/DQN.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Wazuhl/Config.h"
-#include "llvm/Wazuhl/ExperienceReplay.h"
 
-#include <caffe/caffe.hpp>
-#include <caffe/layers/memory_data_layer.hpp>
+#include <torch/torch.h>
 #include <unistd.h>
+
+using namespace llvm::wazuhl;
 
 namespace {
 class GoToDirectory {
@@ -26,6 +27,75 @@ private:
   }
   llvm::SmallString<120> ToReturn;
 };
+
+class Net : public torch::nn::Module {
+public:
+  Net() : torch::nn::Module() {
+    ContextEmbedding = register_module(
+        "embedding", torch::nn::Embedding(config::NumberOfActions + 1,
+                                          config::ContextEmbeddingSize));
+
+    ContextGRU =
+        register_module("gru", torch::nn::GRU(config::ContextEmbeddingSize,
+                                              config::ContextLSTMSize));
+
+    StateNorm = register_module("state_norm",
+                                torch::nn::BatchNorm(config::NumberOfFeatures));
+    ContextNorm = register_module(
+        "context_norm", torch::nn::BatchNorm(config::ContextLSTMSize));
+
+    AdvantageHidden = register_module(
+        "advantage_hidden",
+        torch::nn::Linear(config::EncodedStateSize, config::ActionHiddenSize));
+    AdvantageOutput = register_module(
+        "advantage_output",
+        torch::nn::Linear(config::ActionHiddenSize, config::NumberOfActions));
+    ValueOutput = register_module(
+        "value_output", torch::nn::Linear(config::EncodedStateSize, 1));
+
+    unsigned InputSize = config::NumberOfFeatures, i = 0;
+    for (auto Size : config::EncoderLayerSizes) {
+      EncoderLayers.push_back(
+          register_module(llvm::formatv("state_hidden_{0}", ++i),
+                          torch::nn::Linear(InputSize, Size)));
+      InputSize = Size;
+    }
+  }
+
+  torch::Tensor forward(torch::Tensor state, torch::Tensor context) {
+    context = ContextEmbedding(context);
+    context = ContextGRU(context).output.select(0, config::ContextSize - 1);
+    context = ContextNorm(context);
+
+    state = StateNorm(state);
+    for (auto &Linear : EncoderLayers) {
+      state = torch::relu(Linear(state));
+    }
+
+    state = torch::cat({state, context}, 1);
+
+    auto advantage = torch::relu(AdvantageHidden(state));
+    advantage = torch::tanh(AdvantageOutput(advantage)) * 20;
+
+    auto value = torch::tanh(ValueOutput(state)) * 20;
+    return value + advantage - advantage.mean(1).unsqueeze(1);
+  }
+
+  void backward(torch::Tensor actual, torch::Tensor expected) {
+    auto loss = torch::smooth_l1_loss(actual, expected);
+    loss.backward();
+    std::cout << "Loss: " << loss << std::endl;
+  }
+
+private:
+  torch::nn::Embedding ContextEmbedding{nullptr};
+  torch::nn::GRU ContextGRU{nullptr};
+  torch::nn::BatchNorm StateNorm{nullptr}, ContextNorm{nullptr};
+  torch::nn::Linear AdvantageHidden{nullptr}, AdvantageOutput{nullptr},
+      ValueOutput{nullptr};
+  static constexpr unsigned EncoderDepth = 5;
+  llvm::SmallVector<torch::nn::Linear, EncoderDepth> EncoderLayers{};
+};
 } // namespace
 
 namespace llvm {
@@ -35,17 +105,6 @@ using Result = DQNCore::Result;
 using State = DQNCore::State;
 using ResultsVector = DQNCore::ResultsVector;
 template <class T> using Batch = DQNCore::Batch<T>;
-constexpr auto ContextTrainBlobSize =
-    config::MinibatchSize * config::ContextSize;
-SmallVector<Result, ContextTrainBlobSize> ClipTrainDummy(ContextTrainBlobSize,
-                                                         1.0);
-SmallVector<Result, config::ContextSize> ClipTestDummy(config::ContextSize,
-                                                       1.0);
-
-constexpr SmallVectorImpl<Result> &getClipDummy(unsigned size) {
-  return size == 1 ? static_cast<SmallVectorImpl<Result> &>(ClipTestDummy)
-                   : static_cast<SmallVectorImpl<Result> &>(ClipTrainDummy);
-}
 
 class DQNCoreImpl {
 public:
@@ -65,56 +124,25 @@ public:
 
 private:
   inline void initialize();
-  inline void initializeSolver();
-  inline void initializeNets();
-  inline void initializeInputs();
-  inline void initializeOutputs();
 
   inline void loadTrainedNet();
   inline void saveTrainedNet();
 
-  using Blob = caffe::Blob<Result>;
-  using Net = caffe::Net<Result>;
-  using BlobS = boost::shared_ptr<Blob>;
-  using NetU = std::unique_ptr<Net>;
-  // solver stores boost::shared_ptr,
-  // and it's not convertible to std::shared_ptr
-  using NetS = boost::shared_ptr<Net>;
-  using SolverTy = std::unique_ptr<caffe::Solver<Result>>;
-  using InputLayer = caffe::MemoryDataLayer<Result>;
-  using InputLayerS = boost::shared_ptr<InputLayer>;
-
-  template <unsigned Size, class NetT>
-  inline void forward(const Batch<State> &S, NetT &NeuralNet) const;
-  template <unsigned Size, class NetT>
-  inline void loadInputs(const Batch<State> &S, NetT &NeuralNet) const;
-  template <unsigned Size, class NetT>
-  inline Batch<ResultsVector> calculateImpl(const Batch<State> &S,
-                                            NetT &NeuralNet) const;
-  template <unsigned Size, class NetT>
-  inline Batch<Result> maxImpl(const Batch<State> &S, NetT &NeuralNet) const;
-  template <unsigned Size, class NetT>
-  inline Batch<Action> argmaxImpl(const Batch<State> &S, NetT &NeuralNet) const;
+  template <unsigned Size>
+  inline torch::Tensor forward(const Batch<State> &S) const;
+  template <unsigned Size>
+  inline Batch<ResultsVector> calculateImpl(const Batch<State> &S) const;
+  template <unsigned Size>
+  inline Batch<Result> maxImpl(const Batch<State> &S) const;
+  template <unsigned Size>
+  inline Batch<Action> argmaxImpl(const Batch<State> &S) const;
 
   template <unsigned Size> inline Batch<State> &getCache() const;
 
-  template <class NetT>
-  inline static Blob *getInput(NetT &NeuralNet, const std::string &name);
-  template <class NetT>
-  inline static Result *getInputArray(NetT &NeuralNet, const std::string &name);
-  template <unsigned Size> static inline bool reshape(Blob *Input);
-  template <unsigned Size> static inline bool reshapeRecurrentBlob(Blob *Input);
-
-  static void initializeLogger();
-
-  // learning net is shared with the solver
-  NetS LearningNet;
-  NetU CalculatingNet;
-  SolverTy Solver;
-  BlobS Output, Loss;
-
   mutable Batch<State> LastState, LastBatchOfStates;
-  mutable ResultsVector LastResultsVector;
+  mutable torch::Tensor LastTensor;
+  mutable Net Brain;
+  mutable std::unique_ptr<torch::optim::Optimizer> Optimizer;
 };
 
 //===----------------------------------------------------------------------===//
@@ -155,128 +183,102 @@ DQNCore::~DQNCore() = default;
 //                          pImpl's method defintions
 //===----------------------------------------------------------------------===//
 
-template <unsigned Size, class NetT>
-inline void DQNCoreImpl::forward(const Batch<State> &S, NetT &NeuralNet) const {
+template <unsigned Size>
+inline torch::Tensor DQNCoreImpl::forward(const Batch<State> &S) const {
   auto &Cache = getCache<Size>();
 
   // we just loaded and forwarded exactly this state!
   if (Cache == S) {
-    return;
+    return LastTensor;
   }
 
-  loadInputs<Size>(S, NeuralNet);
-  NeuralNet->Forward();
-
-  Cache = S;
-}
-
-template <unsigned Size, class NetT>
-inline void DQNCoreImpl::loadInputs(const Batch<State> &S,
-                                    NetT &NeuralNet) const {
-  assert(Size == S.size() && "Wrong size of batch is given");
-
-  auto StateInput = getInput(NeuralNet, "data");
-  auto ContextInput = getInput(NeuralNet, "context");
-  auto ClipInput = getInput(NeuralNet, "clip");
-
-  bool NeedReshape = reshape<Size>(StateInput);
-  NeedReshape |= reshapeRecurrentBlob<Size>(ContextInput);
-  NeedReshape |= reshapeRecurrentBlob<Size>(ClipInput);
-
-  if (NeedReshape) {
-    NeuralNet->Reshape();
-  }
-
-  auto States = getInputArray(NeuralNet, "data");
-  auto Contexts = getInputArray(NeuralNet, "context");
-
+  torch::Tensor state = torch::zeros({Size, config::NumberOfFeatures}),
+                context =
+                    torch::zeros({config::ContextSize, Size}, torch::kLong);
   for (auto i : seq<unsigned>(0, Size)) {
     auto &StateRef = S[i];
     for (auto j : seq<unsigned>(0, config::NumberOfFeatures)) {
-      States[i * config::NumberOfFeatures + j] = StateRef[j];
-    }
-
-    for (auto j : seq<unsigned>(0, config::ContextSize)) {
-      Contexts[j * Size + i] = 0;
+      state[i][j] = StateRef[j];
     }
 
     unsigned j = 0, k = 0, N = StateRef.getContext().size();
     for (k = std::max<int>(j, N - config::ContextSize); k < N; ++k, ++j) {
-      Contexts[j * Size + i] = StateRef.getContext()[k] + 1;
+      context[j][i] = static_cast<int64_t>(StateRef.getContext()[k] + 1);
     }
   }
 
-  ClipInput->set_cpu_data(getClipDummy(Size).data());
+  Cache = S;
+  LastTensor = Brain.forward(state, context);
+  return LastTensor;
 }
 
 ResultsVector DQNCoreImpl::calculate(const State &S) const {
   Batch<State> Wrapper{S};
-  return calculateImpl<1>(Wrapper, CalculatingNet)[0];
+  return calculateImpl<1>(Wrapper)[0];
 }
 
 Result DQNCoreImpl::max(const State &S) const {
   Batch<State> Wrapper{S};
-  return maxImpl<1>(Wrapper, CalculatingNet)[0];
+  return maxImpl<1>(Wrapper)[0];
 }
 
 Action DQNCoreImpl::argmax(const State &S) const {
   Batch<State> Wrapper{S};
-  return argmaxImpl<1>(Wrapper, CalculatingNet)[0];
+  return argmaxImpl<1>(Wrapper)[0];
 }
 
 Batch<ResultsVector> DQNCoreImpl::calculate(const Batch<State> &S) const {
-  return calculateImpl<config::MinibatchSize>(S, CalculatingNet);
+  return calculateImpl<config::MinibatchSize>(S);
 }
 
 Batch<Result> DQNCoreImpl::max(const Batch<State> &S) const {
-  return maxImpl<config::MinibatchSize>(S, CalculatingNet);
+  return maxImpl<config::MinibatchSize>(S);
 }
 
 Batch<Action> DQNCoreImpl::argmax(const Batch<State> &S) const {
-  return argmaxImpl<config::MinibatchSize>(S, CalculatingNet);
+  return argmaxImpl<config::MinibatchSize>(S);
 }
 
-template <unsigned Size, class NetT>
-inline Batch<ResultsVector> DQNCoreImpl::calculateImpl(const Batch<State> &S,
-                                                       NetT &NeuralNet) const {
-  forward<Size>(S, NeuralNet);
+template <unsigned Size>
+inline Batch<ResultsVector>
+DQNCoreImpl::calculateImpl(const Batch<State> &S) const {
+  torch::Tensor tensor = forward<Size>(S);
+  auto accessor = tensor.accessor<Result, 2>();
 
   Batch<ResultsVector> result(Size,
                               ResultsVector(config::NumberOfActions, 0.0));
 
   for (auto i : seq<unsigned>(0, Size)) {
     for (auto j : seq<unsigned>(0, config::NumberOfActions)) {
-      result[i][j] = NeuralNet->blob_by_name("Q_values")->data_at(i, j, 0, 0);
+      result[i][j] = accessor[i][j];
     }
   }
 
   return result;
 }
 
-template <unsigned Size, class NetT>
-inline Batch<Result> DQNCoreImpl::maxImpl(const Batch<State> &S,
-                                          NetT &NeuralNet) const {
-  forward<Size>(S, NeuralNet);
+template <unsigned Size>
+inline Batch<Result> DQNCoreImpl::maxImpl(const Batch<State> &S) const {
+  torch::Tensor tensor = std::get<0>(forward<Size>(S).max(1));
+  auto accessor = tensor.accessor<Result, 1>();
 
   Batch<Result> Results;
-
   for (auto i : seq<unsigned>(0, Size)) {
-    Results.push_back(NeuralNet->blob_by_name("argmax")->data_at(i, 1, 0, 0));
+    Results.push_back(accessor[i]);
   }
 
   return Results;
 }
 
-template <unsigned Size, class NetT>
-inline Batch<Action> DQNCoreImpl::argmaxImpl(const Batch<State> &S,
-                                             NetT &NeuralNet) const {
-  forward<Size>(S, NeuralNet);
+template <unsigned Size>
+inline Batch<Action> DQNCoreImpl::argmaxImpl(const Batch<State> &S) const {
+  torch::Tensor tensor = std::get<1>(forward<Size>(S).max(1));
+  auto accessor = tensor.accessor<long, 1>();
 
   Batch<Action> Actions;
-
   for (auto i : seq<unsigned>(0, Size)) {
-    auto index = NeuralNet->blob_by_name("argmax")->data_at(i, 0, 0, 0);
-    Actions.push_back(Action::getActionByIndex(index));
+    Actions.push_back(
+        Action::getActionByIndex(static_cast<unsigned>(accessor[i])));
   }
 
   return Actions;
@@ -291,120 +293,59 @@ inline Batch<State> &DQNCoreImpl::getCache<config::MinibatchSize>() const {
   return LastBatchOfStates;
 }
 
-template <class NetT>
-inline DQNCoreImpl::Blob *DQNCoreImpl::getInput(NetT &NeuralNet,
-                                                const std::string &name) {
-  return NeuralNet->blob_by_name(name).get();
-}
-
-template <class NetT>
-inline Result *DQNCoreImpl::getInputArray(NetT &NeuralNet,
-                                          const std::string &name) {
-  return static_cast<Result *>(
-      NeuralNet->blob_by_name(name)->mutable_cpu_data());
-}
-
-template <unsigned Size>
-inline bool DQNCoreImpl::reshape(DQNCoreImpl::Blob *Input) {
-  if (Input->shape(0) != Size) {
-    Input->Reshape({Size, Input->shape(1)});
-    return true;
-  }
-  return false;
-}
-
-template <unsigned Size>
-inline bool DQNCoreImpl::reshapeRecurrentBlob(DQNCoreImpl::Blob *Input) {
-  if (Input->shape(1) != Size) {
-    Input->Reshape({Input->shape(0), Size});
-    return true;
-  }
-  return false;
-}
-
 void DQNCoreImpl::update(const State &S, const Action &A, Result value) {
   // this implementation doesn't support non-minibatch update
 }
 
 void DQNCoreImpl::update(const Batch<State> &S, const Batch<Action> &A,
                          Batch<Result> V) {
-  loadInputs<config::MinibatchSize>(S, LearningNet);
+  Brain.train();
+  Brain.zero_grad();
 
-  auto Actions = getInputArray(LearningNet, "data_action");
-  auto Outcomes = getInputArray(LearningNet, "value_input");
+  auto QValues = forward<config::MinibatchSize>(S);
 
-  for (auto i : seq<unsigned>(0, config::MinibatchSize)) {
-    auto index = i * config::NumberOfActions + A[i].getIndex();
-    Actions[index] = 1;
-    Outcomes[index] = V[i];
+  torch::Tensor Actions =
+                    torch::zeros({config::MinibatchSize, 1}, torch::kLong),
+                Values = torch::zeros({config::MinibatchSize, 1});
+
+  for (auto i : seq<unsigned>(0, A.size())) {
+    Actions[i] = static_cast<int64_t>(A[i].getIndex());
+    Values[i] = V[i];
   }
+  auto Q = QValues.gather(1, Actions);
 
-  Solver->Step(1);
-
-  llvm::errs() << "Loss = " << Loss->data_at(0, 0, 0, 0) << "\n";
-}
-
-void DQNCoreImpl::initializeLogger() {
-  static bool IsInitialized = false;
-  if (!IsInitialized) {
-    google::InitGoogleLogging("wazuhl");
-    google::SetStderrLogging(google::GLOG_FATAL);
-    IsInitialized = true;
+  Brain.backward(Q, Values);
+  for (auto Param : Brain.parameters()) {
+    Param.grad().clamp_(-1, 1);
   }
+  Optimizer->step();
+  Brain.eval();
 }
 
 inline void DQNCoreImpl::initialize() {
-  initializeLogger();
-  caffe::Caffe::set_mode(caffe::Caffe::CPU);
-  initializeSolver();
-  initializeNets();
-  initializeInputs();
-  initializeOutputs();
-}
-
-inline void DQNCoreImpl::initializeSolver() {
-  caffe::SolverParameter SolverParam;
-
-  // caffe looks for 'net' from solver.prototxt not relatively to itself
-  // but to a current directory, that's why
-  // we're temporaly going to wazuhl's config directory
-  GoToDirectory x{config::getWazuhlConfigPath()};
-
-  caffe::ReadProtoFromTextFileOrDie(config::getCaffeSolverPath(), &SolverParam);
-
-  Solver.reset(caffe::SolverRegistry<Result>::CreateSolver(SolverParam));
-}
-
-inline void DQNCoreImpl::initializeNets() {
-  LearningNet = Solver->net();
+  Optimizer = llvm::make_unique<torch::optim::Adam>(
+      Brain.parameters(), torch::optim::AdamOptions(2e-4).beta1(0.5));
   loadTrainedNet();
-  CalculatingNet =
-      llvm::make_unique<Net>(config::getCaffeModelPath(), caffe::TEST);
-  CalculatingNet->ShareTrainedLayersWith(LearningNet.get());
-}
-
-inline void DQNCoreImpl::initializeInputs() {
-  ClipTestDummy[0] = 0;
-  for (auto i : seq<unsigned>(0, config::MinibatchSize)) {
-    ClipTrainDummy[i] = 0;
-  }
-}
-
-inline void DQNCoreImpl::initializeOutputs() {
-  Output = CalculatingNet->blob_by_name("Q_values");
-  Loss = LearningNet->blob_by_name("loss");
+  Brain.eval();
 }
 
 inline void DQNCoreImpl::loadTrainedNet() {
   auto SavedNet = config::getTrainedNetFile();
-  if (sys::fs::exists(SavedNet))
-    LearningNet->CopyTrainedLayersFrom(SavedNet);
+  if (sys::fs::exists(SavedNet)) {
+    torch::serialize::InputArchive SerializedModel;
+    SerializedModel.load_from(SavedNet);
+    Brain.load(SerializedModel);
+  }
 }
 
 inline void DQNCoreImpl::saveTrainedNet() {
-  caffe::NetParameter net_param;
-  LearningNet->ToProto(&net_param, false);
-  caffe::WriteProtoToBinaryFile(net_param, config::getTrainedNetFile());
+  torch::serialize::OutputArchive SerializedModel;
+  Brain.save(SerializedModel);
+
+  auto ModelFilePath = config::getTrainedNetFile();
+  auto ConfigPath = config::getWazuhlConfigPath();
+  llvm::sys::fs::create_directories(ConfigPath);
+  SerializedModel.save_to(ModelFilePath);
 }
 
 DQNCoreImpl::~DQNCoreImpl() { saveTrainedNet(); }
