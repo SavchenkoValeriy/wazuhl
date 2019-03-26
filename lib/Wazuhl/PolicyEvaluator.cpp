@@ -87,6 +87,14 @@ std::vector<PassAction> getO2Actions() {
   return actions;
 }
 
+double calculateEpsilon() {
+  double distance = config::InitialEpsilon - config::FinalEpsilon;
+  double currentStep =
+      std::min(config::getOverallNumberOfSteps(), config::FinalAnnealingStep);
+  double portion = currentStep / config::FinalAnnealingStep;
+  return config::InitialEpsilon - portion * distance;
+}
+
 } // namespace
 
 void PolicyEvaluator::evaluate() {
@@ -99,7 +107,10 @@ void PolicyEvaluator::evaluate() {
 void LearningPolicyEvaluator::evaluate() {
   DQN Q(config::getTrainingNetFile()), T(config::getTargetNetFile());
   ExperienceReplay Memory;
-  rl::policies::EpsilonGreedy<DQN> policy{0.9, Q};
+  auto Epsilon = calculateEpsilon();
+  llvm::errs() << "Wazuhl starts an episode with epsilon = " << Epsilon << "\n";
+
+  rl::policies::EpsilonGreedy<DQN> policy{Epsilon, Q};
   auto learner = rl::createDeepLearner<rl::DeepDoubleQLearning>(
       OptimizationEnv, Q, T, policy, Memory, 0.99, config::StepsBeforeUpdate);
   learner.learn();

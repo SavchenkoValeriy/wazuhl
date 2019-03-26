@@ -89,7 +89,7 @@ public:
 
   void learn() {
     State S = Environment.getState();
-    unsigned UpdateCounter = 0;
+    unsigned UpdateCounter = config::getOverallNumberOfSteps();
 
     while (!Environment.isInTerminalState()) {
       Action A = Policy.pick(S);
@@ -128,6 +128,8 @@ public:
         Target = Q;
       }
     }
+
+    config::saveOverallNumberOfSteps(UpdateCounter);
   }
 
 private:
@@ -153,7 +155,8 @@ public:
 
   void learn() {
     State S = Environment.getState();
-    unsigned UpdateCounter = 0;
+    unsigned UpdateCounter = config::getOverallNumberOfSteps();
+    llvm::errs() << "Step counter: " << UpdateCounter << "\n";
 
     while (!Environment.isInTerminalState()) {
       Action A = Policy.pick(S);
@@ -189,9 +192,12 @@ public:
       }
 
       if (UpdateCounter++ % C == 0) {
+        llvm::errs() << "Time for Wazuhl to update the target network\n";
         Target = Q;
       }
     }
+
+    config::saveOverallNumberOfSteps(UpdateCounter);
   }
 
 private:

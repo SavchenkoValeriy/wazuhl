@@ -7,6 +7,8 @@ namespace llvm {
 namespace wazuhl {
 namespace config {
 
+unsigned getOverallNumberOfSteps();
+void saveOverallNumberOfSteps(unsigned);
 void ensureConfig();
 StringRef getWazuhlConfigPath();
 StringRef getTrainingNetFile();
