@@ -7,10 +7,10 @@ namespace llvm {
 namespace wazuhl {
 namespace config {
 
-StringRef getCaffeModelPath();
-StringRef getCaffeSolverPath();
+void ensureConfig();
 StringRef getWazuhlConfigPath();
-StringRef getTrainedNetFile();
+StringRef getTrainingNetFile();
+StringRef getTargetNetFile();
 
 constexpr unsigned MinibatchSize = 32;
 #define LAST_OTHER_INST(num) constexpr auto NumberOfRawIRFeatures = num;
@@ -21,11 +21,14 @@ constexpr unsigned NumberOfIRFeatures = NumberOfRawIRFeatures * 4,
                    TimeIndex = NumberOfIRFeatures * 2,
                    ActionOffset = TimeIndex + 1, NumberOfActions = 107,
                    NumberOfFeatures = NumberOfIRFeatures * 2 + 1,
-                   ExperienceSize = 3000, MinimalExperienceSize = 1000,
+                   ExperienceSize = 10000, MinimalExperienceSize = 500,
                    ContextSize = 30, ContextEmbeddingSize = 8,
                    ContextLSTMSize = 32, ActionHiddenSize = 128,
                    EncodedIRFeaturesSize = 64,
-                   EncodedStateSize = EncodedIRFeaturesSize + ContextLSTMSize;
+                   EncodedStateSize = EncodedIRFeaturesSize + ContextLSTMSize,
+                   StepsBeforeUpdate = 500, FinalAnnealingStep = 50000;
+
+constexpr double InitialEpsilon = 0.9, FinalEpsilon = 0.1;
 
 constexpr auto EncoderLayerSizes = {128, 64};
 

@@ -1,4 +1,5 @@
 #include "llvm/Wazuhl/Manager.h"
+#include "llvm/Wazuhl/Config.h"
 #include "llvm/Wazuhl/Environment.h"
 #include "llvm/Wazuhl/FeatureCollector.h"
 #include "llvm/Wazuhl/PolicyEvaluator.h"
@@ -44,6 +45,7 @@ void exploit(Environment &Env) { evaluate<PolicyEvaluator>(Env); }
 namespace llvm {
 namespace wazuhl {
 PreservedAnalyses Manager::run(Module &IR, ModuleAnalysisManager &AM) {
+  config::ensureConfig();
   registerFeatureCollectors(IR, AM);
   Environment OptimizationEnv{IR, AM};
 

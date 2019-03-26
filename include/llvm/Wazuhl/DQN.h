@@ -36,7 +36,7 @@ public:
 
   void copyWeightsFrom(const DQNCore &);
 
-  DQNCore();
+  DQNCore(StringRef ModelFile);
   ~DQNCore();
 
 private:

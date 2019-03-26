@@ -11,10 +11,11 @@ inline PathT appendPath(PathT &Path, AdditionalT... Appendicies) {
   return Result;
 }
 
-using SmallString = llvm::SmallString<120>;
+using FilePath = llvm::SmallString<120>;
 
-SmallString RootLLVMDirectory = llvm::StringRef{LLVM_PREFIX};
-SmallString WazuhlConfigs = appendPath(RootLLVMDirectory, "wazuhl");
+FilePath RootLLVMDirectory = llvm::StringRef{LLVM_PREFIX};
+FilePath WazuhlConfigs = appendPath(RootLLVMDirectory, "wazuhl");
+
 } // namespace
 
 namespace llvm {
@@ -23,10 +24,17 @@ namespace config {
 
 StringRef getWazuhlConfigPath() { return WazuhlConfigs; }
 
-StringRef getTrainedNetFile() {
-  static SmallString<120> TrainedNet =
-      appendPath(WazuhlConfigs, "trained.model");
-  return TrainedNet;
+void ensureConfig() { llvm::sys::fs::create_directories(WazuhlConfigs); }
+
+
+StringRef getTrainingNetFile() {
+  static FilePath TrainingNet = appendPath(WazuhlConfigs, "training.model");
+  return TrainingNet;
+}
+
+StringRef getTargetNetFile() {
+  static FilePath TargetNet = appendPath(WazuhlConfigs, "target.model");
+  return TargetNet;
 }
 } // namespace config
 } // namespace wazuhl

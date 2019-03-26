@@ -110,7 +110,8 @@ public:
     return (*this)(S)(A);
   }
 
-  Q() = default;
+  template <class... Args, typename = decltype(QCore(std::declval<Args>()...))>
+  Q(Args &&... args) : Original(std::forward<Args>(args)...) {}
   Q(const Q<QCore> &Source) { Original.copyWeightsFrom(Source.Original); }
   Q(Q<QCore> &&) = default;
 

@@ -69,9 +69,11 @@ template <template <class...> class Learner, class EnvironmentT,
           class FunctionT, class PolicyT, class MemoryT, class... Args>
 Learner<EnvironmentT, FunctionT, PolicyT, MemoryT>
 createDeepLearner(EnvironmentT &Environment, FunctionT &ValueFunction,
-                  const PolicyT &Policy, MemoryT &Memory, Args &&... args) {
+                  FunctionT &TargetValueFunction, const PolicyT &Policy,
+                  MemoryT &Memory, Args &&... args) {
   return Learner<EnvironmentT, FunctionT, PolicyT, MemoryT>{
-      Environment, ValueFunction, Policy, Memory, std::forward<Args>(args)...};
+      Environment, ValueFunction, TargetValueFunction,
+      Policy,      Memory,        std::forward<Args>(args)...};
 }
 
 template <class EnvironmentT, class QType, class PolicyT, class MemoryT>
@@ -79,9 +81,10 @@ class DeepQLearning {
 public:
   using Action = typename EnvironmentT::Action;
   using State = typename EnvironmentT::State;
-  DeepQLearning(EnvironmentT &Environment, QType &Q, const PolicyT &Policy,
-                MemoryT &Memory, double gamma, unsigned C)
-      : Environment(Environment), Q(Q), Target(Q), Policy(Policy),
+  DeepQLearning(EnvironmentT &Environment, QType &Q, QType &T,
+                const PolicyT &Policy, MemoryT &Memory, double gamma,
+                unsigned C)
+      : Environment(Environment), Q(Q), Target(T), Policy(Policy),
         Memory(Memory), gamma(gamma), C(C) {}
 
   void learn() {
@@ -142,10 +145,10 @@ class DeepDoubleQLearning {
 public:
   using Action = typename EnvironmentT::Action;
   using State = typename EnvironmentT::State;
-  DeepDoubleQLearning(EnvironmentT &Environment, QType &Q,
+  DeepDoubleQLearning(EnvironmentT &Environment, QType &Q, QType &T,
                       const PolicyT &Policy, MemoryT &Memory, double gamma,
                       unsigned C)
-      : Environment(Environment), Q(Q), Target(Q), Policy(Policy),
+      : Environment(Environment), Q(Q), Target(T), Policy(Policy),
         Memory(Memory), gamma(gamma), C(C) {}
 
   void learn() {
@@ -194,7 +197,7 @@ public:
 private:
   EnvironmentT &Environment;
   QType &Q;
-  QType Target;
+  QType &Target;
   const PolicyT &Policy;
   MemoryT &Memory;
   double gamma;

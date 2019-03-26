@@ -90,18 +90,18 @@ std::vector<PassAction> getO2Actions() {
 } // namespace
 
 void PolicyEvaluator::evaluate() {
-  DQN Q;
+  DQN Q(config::getTargetNetFile());
   rl::policies::Greedy<DQN> policy{Q};
   auto learner = rl::createLearner<rl::NonLearning>(OptimizationEnv, Q, policy);
   learner.learn();
 }
 
 void LearningPolicyEvaluator::evaluate() {
-  DQN Q;
+  DQN Q(config::getTrainingNetFile()), T(config::getTargetNetFile());
   ExperienceReplay Memory;
   rl::policies::EpsilonGreedy<DQN> policy{0.9, Q};
   auto learner = rl::createDeepLearner<rl::DeepDoubleQLearning>(
-      OptimizationEnv, Q, policy, Memory, 0.99, (unsigned)10);
+      OptimizationEnv, Q, T, policy, Memory, 0.99, config::StepsBeforeUpdate);
   learner.learn();
 }
 } // namespace wazuhl

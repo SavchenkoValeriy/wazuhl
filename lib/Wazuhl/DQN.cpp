@@ -108,7 +108,7 @@ template <class T> using Batch = DQNCore::Batch<T>;
 
 class DQNCoreImpl {
 public:
-  DQNCoreImpl() { initialize(); }
+  DQNCoreImpl(StringRef ModelFile) : ModelFile(ModelFile) { initialize(); }
   ~DQNCoreImpl();
   ResultsVector calculate(const State &S) const;
   Result max(const State &S) const;
@@ -122,11 +122,15 @@ public:
   void update(const Batch<State> &S, const Batch<Action> &A,
               const Batch<Result> value);
 
+  inline void copyWeightsFrom(const DQNCoreImpl &);
+
 private:
   inline void initialize();
 
-  inline void loadTrainedNet();
-  inline void saveTrainedNet();
+  inline void loadNet();
+  inline void saveNet() const;
+  inline void loadNetFromFile(StringRef File);
+  inline void saveNetToFile(StringRef File) const;
 
   template <unsigned Size>
   inline torch::Tensor forward(const Batch<State> &S) const;
@@ -139,6 +143,7 @@ private:
 
   template <unsigned Size> inline Batch<State> &getCache() const;
 
+  StringRef ModelFile;
   mutable Batch<State> LastState, LastBatchOfStates;
   mutable torch::Tensor LastTensor;
   mutable Net Brain;
@@ -174,9 +179,12 @@ void DQNCore::update(const Batch<State> &S, const Batch<Action> &A,
   pImpl->update(S, A, value);
 }
 
-void DQNCore::copyWeightsFrom(const DQNCore &Source) {}
+void DQNCore::copyWeightsFrom(const DQNCore &Source) {
+  pImpl->copyWeightsFrom(*Source.pImpl);
+}
 
-DQNCore::DQNCore() : pImpl(llvm::make_unique<DQNCoreImpl>()) {}
+DQNCore::DQNCore(StringRef ModelFile)
+    : pImpl(llvm::make_unique<DQNCoreImpl>(ModelFile)) {}
 DQNCore::~DQNCore() = default;
 
 //===----------------------------------------------------------------------===//
@@ -322,32 +330,36 @@ void DQNCoreImpl::update(const Batch<State> &S, const Batch<Action> &A,
   Brain.eval();
 }
 
+void DQNCoreImpl::copyWeightsFrom(const DQNCoreImpl &Source) {
+  Source.saveNet();
+  loadNetFromFile(Source.ModelFile);
+}
+
 inline void DQNCoreImpl::initialize() {
   Optimizer = llvm::make_unique<torch::optim::Adam>(
-      Brain.parameters(), torch::optim::AdamOptions(2e-4).beta1(0.5));
-  loadTrainedNet();
+      Brain.parameters(), torch::optim::AdamOptions(1e-4).beta1(0.5));
+  loadNet();
   Brain.eval();
 }
 
-inline void DQNCoreImpl::loadTrainedNet() {
-  auto SavedNet = config::getTrainedNetFile();
-  if (sys::fs::exists(SavedNet)) {
+inline void DQNCoreImpl::loadNet() { loadNetFromFile(ModelFile); }
+
+inline void DQNCoreImpl::saveNet() const { saveNetToFile(ModelFile); }
+
+inline void DQNCoreImpl::loadNetFromFile(StringRef File) {
+  if (sys::fs::exists(File)) {
     torch::serialize::InputArchive SerializedModel;
-    SerializedModel.load_from(SavedNet);
+    SerializedModel.load_from(File);
     Brain.load(SerializedModel);
   }
 }
 
-inline void DQNCoreImpl::saveTrainedNet() {
+inline void DQNCoreImpl::saveNetToFile(StringRef File) const {
   torch::serialize::OutputArchive SerializedModel;
   Brain.save(SerializedModel);
-
-  auto ModelFilePath = config::getTrainedNetFile();
-  auto ConfigPath = config::getWazuhlConfigPath();
-  llvm::sys::fs::create_directories(ConfigPath);
-  SerializedModel.save_to(ModelFilePath);
+  SerializedModel.save_to(File);
 }
 
-DQNCoreImpl::~DQNCoreImpl() { saveTrainedNet(); }
+DQNCoreImpl::~DQNCoreImpl() { saveNet(); }
 } // namespace wazuhl
 } // namespace llvm

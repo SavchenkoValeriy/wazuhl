@@ -27,7 +27,7 @@ def define_getter(name, value):
 
 
 def get_alpha():
-    return 0.5
+    return 0.01
 
 
 def get_lambda():
