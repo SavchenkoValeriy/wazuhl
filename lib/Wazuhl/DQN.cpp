@@ -63,8 +63,10 @@ public:
   }
 
   torch::Tensor forward(torch::Tensor state, torch::Tensor context) {
+    unsigned length = context.sizes()[0];
+
     context = ContextEmbedding(context);
-    context = ContextGRU(context).output.select(0, config::ContextSize - 1);
+    context = ContextGRU(context).output.select(0, length - 1);
     context = ContextNorm(context);
 
     state = StateNorm(state);
@@ -75,9 +77,9 @@ public:
     state = torch::cat({state, context}, 1);
 
     auto advantage = torch::relu(AdvantageHidden(state));
-    advantage = torch::tanh(AdvantageOutput(advantage)) * 20;
+    advantage = torch::tanh(AdvantageOutput(advantage)) * 10;
 
-    auto value = torch::tanh(ValueOutput(state)) * 20;
+    auto value = torch::tanh(ValueOutput(state)) * 10;
     return value + advantage - advantage.mean(1).unsqueeze(1);
   }
 
@@ -200,9 +202,18 @@ inline torch::Tensor DQNCoreImpl::forward(const Batch<State> &S) const {
     return LastTensor;
   }
 
+  // sequence should have at least one element (even if it's just a zero)
+  unsigned maxLength = 1;
+  for (auto &Element : S) {
+    maxLength = std::max<unsigned>(maxLength, Element.getContext().size());
+  }
+
+  // it shouldn't be bigger than config::ContextSize though
+  maxLength = std::min(maxLength, config::ContextSize);
+
   torch::Tensor state = torch::zeros({Size, config::NumberOfFeatures}),
                 context =
-                    torch::zeros({config::ContextSize, Size}, torch::kLong);
+                    torch::zeros({maxLength, Size}, torch::kLong);
   for (auto i : seq<unsigned>(0, Size)) {
     auto &StateRef = S[i];
     for (auto j : seq<unsigned>(0, config::NumberOfFeatures)) {
@@ -322,6 +333,7 @@ void DQNCoreImpl::update(const Batch<State> &S, const Batch<Action> &A,
   }
   auto Q = QValues.gather(1, Actions);
 
+  Values.clamp_(-10, 10);
   Brain.backward(Q, Values);
   for (auto Param : Brain.parameters()) {
     Param.grad().clamp_(-1, 1);
