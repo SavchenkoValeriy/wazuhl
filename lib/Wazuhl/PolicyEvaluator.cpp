@@ -107,10 +107,7 @@ void PolicyEvaluator::evaluate() {
 void LearningPolicyEvaluator::evaluate() {
   DQN Q(config::getTrainingNetFile()), T(config::getTargetNetFile());
   ExperienceReplay Memory;
-  auto Epsilon = calculateEpsilon();
-  llvm::errs() << "Wazuhl starts an episode with epsilon = " << Epsilon << "\n";
-
-  rl::policies::EpsilonGreedy<DQN> policy{Epsilon, Q};
+  rl::policies::Greedy<DQN> policy{Q};
   auto learner = rl::createDeepLearner<rl::DeepDoubleQLearning>(
       OptimizationEnv, Q, T, policy, Memory, 0.99, config::StepsBeforeUpdate);
   learner.learn();

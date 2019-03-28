@@ -28,9 +28,11 @@ constexpr unsigned NumberOfIRFeatures = NumberOfRawIRFeatures * 4,
                    ContextLSTMSize = 32, ActionHiddenSize = 128,
                    EncodedIRFeaturesSize = 64,
                    EncodedStateSize = EncodedIRFeaturesSize + ContextLSTMSize,
-                   StepsBeforeUpdate = 500, FinalAnnealingStep = 50000;
+                   StepsBeforeUpdate = 300, FinalAnnealingStep = 50000;
 
 constexpr double InitialEpsilon = 0.9, FinalEpsilon = 0.1;
+
+constexpr float NoiseSigma = 0.017;
 
 constexpr auto EncoderLayerSizes = {128, 64};
 

@@ -28,6 +28,62 @@ private:
   llvm::SmallString<120> ToReturn;
 };
 
+struct NoisyLinearOptions : public torch::nn::LinearOptions {
+  using LinearOptions::LinearOptions;
+  TORCH_ARG(float, sigmaInit) = config::NoiseSigma;
+};
+
+class NoisyLinearImpl : public torch::nn::Cloneable<NoisyLinearImpl> {
+public:
+  NoisyLinearImpl(int64_t in, int64_t out)
+      : NoisyLinearImpl(NoisyLinearOptions(in, out)) {}
+  explicit NoisyLinearImpl(NoisyLinearOptions options) : Options(options) {
+    reset();
+  }
+
+  void reset() override {
+    Weight =
+        register_parameter("Weight", torch::empty({Options.out_, Options.in_}));
+    SigmaWeight = register_parameter("SigmaWeight",
+                                     torch::empty({Options.out_, Options.in_}));
+    EpsilonWeight = register_buffer(
+        "EpsilonWeight",
+        torch::full({Options.out_, Options.in_}, Options.sigmaInit_));
+    if (Options.with_bias_) {
+      Bias = register_parameter("Bias", torch::empty(Options.out_));
+      SigmaBias = register_parameter("SigmaBias", torch::empty(Options.out_));
+      EpsilonBias = register_buffer(
+          "EpsilonBias", torch::full(Options.out_, Options.sigmaInit_));
+    }
+
+    const auto stdv = std::sqrt(3.0 / Options.in_);
+    torch::NoGradGuard guard;
+    for (auto &p : this->parameters()) {
+      p.uniform_(-stdv, stdv);
+    }
+  }
+
+  torch::Tensor forward(const torch::Tensor &input) {
+    AT_ASSERT(!Options.with_bias_ || Bias.defined());
+    torch::randn_out(EpsilonWeight, EpsilonWeight.sizes());
+    torch::Tensor currentBias = Bias;
+    if (currentBias.defined()) {
+      torch::randn_out(EpsilonBias, EpsilonBias.sizes());
+      currentBias = Bias + SigmaBias * EpsilonBias;
+    }
+    return torch::linear(input, Weight + SigmaWeight * EpsilonWeight,
+                         currentBias);
+  }
+
+  NoisyLinearOptions Options;
+
+  torch::Tensor Weight, Bias;
+  torch::Tensor SigmaWeight, SigmaBias;
+  torch::Tensor EpsilonWeight, EpsilonBias;
+};
+
+TORCH_MODULE(NoisyLinear);
+
 class Net : public torch::nn::Module {
 public:
   Net() : torch::nn::Module() {
@@ -46,18 +102,18 @@ public:
 
     AdvantageHidden = register_module(
         "advantage_hidden",
-        torch::nn::Linear(config::EncodedStateSize, config::ActionHiddenSize));
+        NoisyLinear(config::EncodedStateSize, config::ActionHiddenSize));
     AdvantageOutput = register_module(
         "advantage_output",
-        torch::nn::Linear(config::ActionHiddenSize, config::NumberOfActions));
-    ValueOutput = register_module(
-        "value_output", torch::nn::Linear(config::EncodedStateSize, 1));
+        NoisyLinear(config::ActionHiddenSize, config::NumberOfActions));
+    ValueOutput = register_module("value_output",
+                                  NoisyLinear(config::EncodedStateSize, 1));
 
     unsigned InputSize = config::NumberOfFeatures, i = 0;
     for (auto Size : config::EncoderLayerSizes) {
       EncoderLayers.push_back(
           register_module(llvm::formatv("state_hidden_{0}", ++i),
-                          torch::nn::Linear(InputSize, Size)));
+                          NoisyLinear(InputSize, Size)));
       InputSize = Size;
     }
   }
@@ -93,10 +149,10 @@ private:
   torch::nn::Embedding ContextEmbedding{nullptr};
   torch::nn::GRU ContextGRU{nullptr};
   torch::nn::BatchNorm StateNorm{nullptr}, ContextNorm{nullptr};
-  torch::nn::Linear AdvantageHidden{nullptr}, AdvantageOutput{nullptr},
+  NoisyLinear AdvantageHidden{nullptr}, AdvantageOutput{nullptr},
       ValueOutput{nullptr};
   static constexpr unsigned EncoderDepth = 5;
-  llvm::SmallVector<torch::nn::Linear, EncoderDepth> EncoderLayers{};
+  llvm::SmallVector<NoisyLinear, EncoderDepth> EncoderLayers{};
 };
 } // namespace
 
