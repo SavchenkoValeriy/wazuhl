@@ -179,7 +179,7 @@ public:
         auto &Rs = Experience.R;
         auto &newSs = Experience.newS;
 
-        auto Ys = Rs + gamma * Q(newSs, argmax(Target(newSs)));
+        auto Ys = Rs + gamma * Target(newSs, argmax(Q(newSs)));
 
         for (auto i : seq<unsigned>(0, Experience.size())) {
           if (Experience.isTerminal[i]) {
