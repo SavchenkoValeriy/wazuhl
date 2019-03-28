@@ -261,6 +261,7 @@ Batch<Action> DQNCoreImpl::argmax(const Batch<State> &S) const {
 template <unsigned Size>
 inline Batch<ResultsVector>
 DQNCoreImpl::calculateImpl(const Batch<State> &S) const {
+  torch::NoGradGuard guard;
   torch::Tensor tensor = forward<Size>(S);
   auto accessor = tensor.accessor<Result, 2>();
 
@@ -278,6 +279,7 @@ DQNCoreImpl::calculateImpl(const Batch<State> &S) const {
 
 template <unsigned Size>
 inline Batch<Result> DQNCoreImpl::maxImpl(const Batch<State> &S) const {
+  torch::NoGradGuard guard;
   torch::Tensor tensor = std::get<0>(forward<Size>(S).max(1));
   auto accessor = tensor.accessor<Result, 1>();
 
@@ -291,6 +293,7 @@ inline Batch<Result> DQNCoreImpl::maxImpl(const Batch<State> &S) const {
 
 template <unsigned Size>
 inline Batch<Action> DQNCoreImpl::argmaxImpl(const Batch<State> &S) const {
+  torch::NoGradGuard guard;
   torch::Tensor tensor = std::get<1>(forward<Size>(S).max(1));
   auto accessor = tensor.accessor<long, 1>();
 
