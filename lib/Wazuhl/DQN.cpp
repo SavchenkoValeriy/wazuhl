@@ -408,7 +408,7 @@ void DQNCoreImpl::copyWeightsFrom(const DQNCoreImpl &Source) {
 
 inline void DQNCoreImpl::initialize() {
   Optimizer = llvm::make_unique<torch::optim::Adam>(
-      Brain.parameters(), torch::optim::AdamOptions(1e-4).beta1(0.5));
+      Brain.parameters(), torch::optim::AdamOptions(1e-4));
   loadNet();
   Brain.eval();
 }
