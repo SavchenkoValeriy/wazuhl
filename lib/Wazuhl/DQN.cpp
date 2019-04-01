@@ -44,16 +44,16 @@ public:
   void reset() override {
     Weight =
         register_parameter("Weight", torch::empty({Options.out_, Options.in_}));
-    SigmaWeight = register_parameter("SigmaWeight",
-                                     torch::empty({Options.out_, Options.in_}));
-    EpsilonWeight = register_buffer(
-        "EpsilonWeight",
+    SigmaWeight = register_parameter(
+        "SigmaWeight",
         torch::full({Options.out_, Options.in_}, Options.sigmaInit_));
+    EpsilonWeight = register_buffer("EpsilonWeight",
+                                    torch::empty({Options.out_, Options.in_}));
     if (Options.with_bias_) {
       Bias = register_parameter("Bias", torch::empty(Options.out_));
-      SigmaBias = register_parameter("SigmaBias", torch::empty(Options.out_));
-      EpsilonBias = register_buffer(
-          "EpsilonBias", torch::full(Options.out_, Options.sigmaInit_));
+      SigmaBias = register_parameter(
+          "SigmaBias", torch::full(Options.out_, Options.sigmaInit_));
+      EpsilonBias = register_buffer("EpsilonBias", torch::empty(Options.out_));
     }
 
     const auto stdv = std::sqrt(3.0 / Options.in_);
