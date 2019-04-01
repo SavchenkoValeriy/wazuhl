@@ -54,6 +54,8 @@ class Experience:
 
     def approve(self, value):
         new_records = []
+        self.rewards.insert_one({"step": self.rewards_counter, "reward": value})
+        self.rewards_counter += 1
         for item in self.waiting.find({}):
             record = {}
             record.update(item)
