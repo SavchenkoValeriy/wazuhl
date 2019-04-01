@@ -14,9 +14,15 @@ app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 plotter = Plotter()
 receiver = DataReceiver()
 
+
+def preprocess_reward(x):
+    return x if x >= -10.0 else -10.0
+
+
 @app.route("/", methods=['GET'])
 def main_page():
     steps, rewards = receiver.get_latest_rewards()
+    rewards = list(map(preprocess_reward, rewards))
     logging.info(steps)
     logging.info(rewards)
     plotter.plot_mean_reward(steps, rewards)

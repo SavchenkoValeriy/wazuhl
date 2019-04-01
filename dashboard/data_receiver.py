@@ -18,3 +18,4 @@ class DataReceiver:
         logging.info(steps)
         logging.info(rewards)
         return steps, rewards
+

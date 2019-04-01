@@ -1,6 +1,8 @@
 import matplotlib.pyplot as plt
-import seaborn as sns
 import numpy as np
+import pandas as pd
+import seaborn as sns
+
 
 class Plotter:
     def __init__(self, pic_folder="static/"):
@@ -10,12 +12,12 @@ class Plotter:
         self.pic_folder = pic_folder
         self.fsize = (9, 4)
 
-    def plot_curve_plot(self, x, y, filename, xlabel, ylabel):
+    def plot_curve_plot(self, x, y, filename, xlabel, ylabel, average_over=1):
         plt.figure(figsize=self.fsize)
-        plt.plot(x, y)
-        plt.grid()
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
+        x = [i - i % average_over for i in x]
+        sns.lineplot(x, y)
         plt.savefig("{}{}".format(self.pic_folder, filename),
                     bbox_inches='tight')
 
@@ -31,7 +33,7 @@ class Plotter:
     def plot_mean_reward(self, time=np.random.rand((10)),
                          reward=np.random.rand(10)):
         self.plot_curve_plot(time, reward, "mean_reward_plot.svg", "t, epochs",
-                             "Average reward per episode")
+                             "Average reward per episode", 300)
 
     def plot_baselines(self, baselines_compile, baselines_run, model_compile,
                        model_run, steps):
