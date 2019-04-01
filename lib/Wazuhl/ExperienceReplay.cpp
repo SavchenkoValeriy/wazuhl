@@ -19,6 +19,10 @@ using bsoncxx::builder::stream::open_document;
 using bsoncxx::document::view;
 using mongocxx::pipeline;
 
+constexpr unsigned NumberOfCollections = 3;
+using Collections =
+    llvm::SmallVector<mongocxx::collection *, NumberOfCollections>;
+
 namespace {
 using State = llvm::wazuhl::ExperienceReplay::State;
 using Action = llvm::wazuhl::ExperienceReplay::Action;
@@ -79,7 +83,7 @@ public:
   ~ExperienceReplayImpl();
 
   void push(const State &S, const Action &A, Result R, const State &newS);
-  RecalledExperience sample();
+  RecalledExperience sample(unsigned size);
   bool isBigEnoughForReplay();
 
 private:
@@ -90,12 +94,15 @@ private:
   void uploadApprovedExperience();
   void uploadExperienceWaitingForApproval();
 
-  void uploadExperienceImpl(mongocxx::collection &collection, bool isTerminal);
+  void uploadExperienceImpl(Collections collections, bool isTerminal);
+
+  RecalledExperience aggregate(mongocxx::cursor &cursor, int size = -1);
 
   mongocxx::client MongoClient{mongocxx::uri{"mongodb://mongo:27017"}};
   mongocxx::database ExternalMemory;
   mongocxx::collection ApprovedRecords;
   mongocxx::collection RecordsWaitingForApproval;
+  mongocxx::collection AllRecords;
 
   // it should be at least one action taken (terminal)
   ExperienceUnit LastExperience{};
@@ -114,8 +121,10 @@ void ExperienceReplay::push(const State &S, const Action &A, Result R,
   pImpl->push(S, A, R, newS);
 }
 
-ExperienceReplay::RecalledExperience ExperienceReplay::sample() {
-  return pImpl->sample();
+ExperienceReplay::RecalledExperience ExperienceReplay::sample(unsigned size) {
+  return pImpl->sample(size);
+}
+
 }
 
 bool ExperienceReplay::isBigEnoughForReplay() {
@@ -132,6 +141,7 @@ void ExperienceReplayImpl::initialize() {
   ExternalMemory = MongoClient["wazuhl"];
   createCollection(ApprovedRecords, "approved", true);
   createCollection(RecordsWaitingForApproval, "waiting", false);
+  createCollection(AllRecords, "all", false);
 }
 
 void ExperienceReplayImpl::createCollection(mongocxx::collection &collection,
@@ -170,15 +180,15 @@ void ExperienceReplayImpl::push(const State &S, const Action &A, Result R,
 }
 
 void ExperienceReplayImpl::uploadApprovedExperience() {
-  uploadExperienceImpl(ApprovedRecords, false);
+  uploadExperienceImpl({&ApprovedRecords, &AllRecords}, false);
 }
 
 void ExperienceReplayImpl::uploadExperienceWaitingForApproval() {
-  uploadExperienceImpl(RecordsWaitingForApproval, true);
+  uploadExperienceImpl({&RecordsWaitingForApproval}, true);
 }
 
-void ExperienceReplayImpl::uploadExperienceImpl(
-    mongocxx::collection &collection, bool isTerminal) {
+void ExperienceReplayImpl::uploadExperienceImpl(Collections collections,
+                                                bool isTerminal) {
   const auto &S = LastExperience.state;
   const auto A = LastExperience.actionIndex;
   const auto R = LastExperience.value;
@@ -198,7 +208,9 @@ void ExperienceReplayImpl::uploadExperienceImpl(
   addArray<double>(ExperienceRecord, "newState", NewS);
   addArray<int>(ExperienceRecord, "newContext", NewS.getContext());
 
-  collection.insert_one(ExperienceRecord.view());
+  for (auto *collection : collections) {
+    collection->insert_one(ExperienceRecord.view());
+  }
 }
 
 ExperienceReplayImpl::~ExperienceReplayImpl() {
@@ -209,15 +221,20 @@ bool ExperienceReplayImpl::isBigEnoughForReplay() {
   return ApprovedRecords.count_documents({}) >= config::MinimalExperienceSize;
 }
 
-RecalledExperience ExperienceReplayImpl::sample() {
-  RecalledExperience Sample;
+RecalledExperience ExperienceReplayImpl::sample(unsigned size) {
   // Randomly choose MinibatchSize number of experience entries
   auto SampleQuery = pipeline{};
-  SampleQuery.sample((int)(config::ExperienceSize / 20 + 1));
+  int querySize = std::max<int>(size, config::ExperienceSize / 20 + 1);
+  SampleQuery.sample(querySize);
+  auto cursor = ApprovedRecords.aggregate(SampleQuery);
+  return aggregate(cursor, size);
+}
 
-  auto Cursor = ApprovedRecords.aggregate(SampleQuery);
+RecalledExperience ExperienceReplayImpl::aggregate(mongocxx::cursor &cursor,
+                                                   int size) {
+  RecalledExperience Sample;
 
-  for (auto doc : Cursor) {
+  for (auto doc : cursor) {
     State S, newS;
 
     fillStateArray(S, "state", doc);
@@ -233,7 +250,7 @@ RecalledExperience ExperienceReplayImpl::sample() {
     Sample.R.push_back(reward);
     Sample.newS.emplace_back(std::move(newS));
     Sample.isTerminal.push_back(isTerminal);
-    if (Sample.S.size() == config::MinibatchSize) {
+    if (Sample.S.size() == size) {
       break;
     }
   }

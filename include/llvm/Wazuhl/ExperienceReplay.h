@@ -33,7 +33,7 @@ public:
   };
 
   void push(const State &, const Action &, Result R, const State &);
-  RecalledExperience sample();
+  RecalledExperience sample(unsigned size = config::MinibatchSize);
   bool isBigEnoughForReplay();
 
 private:

@@ -14,6 +14,7 @@ class Experience:
         logging.info("Connecting to 'mongo' for experience")
         self.client = MongoClient('mongo')
         self.db = self.client["wazuhl"]
+        self.all = self.db["all"]
         self.approved = self.db["approved"]
         self.waiting = self.db["waiting"]
         self.rewards = self.db["rewards"]
@@ -50,6 +51,7 @@ class Experience:
             # sometimes waiting-for-approval collection is empty
             # TODO: investigate why
             self.approved.insert_many(new_records)
+            self.all.insert_many(new_records)
         self.waiting.delete_many({})
 
     def approve(self, value):
@@ -67,6 +69,7 @@ class Experience:
             # sometimes waiting-for-approval collection is empty
             # TODO: investigate why
             self.approved.insert_many(new_records)
+            self.all.insert_many(new_records)
         self.waiting.delete_many({})
 
 
