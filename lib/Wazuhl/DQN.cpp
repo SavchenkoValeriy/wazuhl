@@ -133,7 +133,7 @@ public:
     state = torch::cat({state, context}, 1);
 
     auto advantage = torch::relu(AdvantageHidden(state));
-    advantage = torch::tanh(AdvantageOutput(advantage)) * 10;
+    advantage = AdvantageOutput(advantage);
 
     auto value = torch::tanh(ValueOutput(state)) * 10;
     return value + advantage - advantage.mean(1).unsqueeze(1);
