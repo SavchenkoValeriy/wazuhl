@@ -79,7 +79,7 @@ class Test:
     def compile(self):
         self.suite.go_to_builddir()
         with open(os.devnull, 'wb') as devnull:
-            make_command = ['make', '-j1', self.name]
+            make_command = ['make', '--always-make', '-j1', self.name]
             logging.debug(make_command)
             subprocess.run(make_command,  env=self.suite.configuration_env)
 
